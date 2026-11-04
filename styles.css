@@ -2888,3 +2888,277 @@ textarea:focus {
 .tx-more-wrap[hidden] { display: none; }
 .tx-quick-cat-pill.tx-quick-cat-add { border-style: dashed; color: var(--text3); padding: 6px 14px; font-size: 16px; line-height: 1; }
 .tx-quick-cat-pill { padding: 8px 13px; }
+
+/* ==========================================================================
+   v5 — ПРОЩЕ И СВОБОДНЕЕ: 3 ВКЛАДКИ, ВОЗДУХ, АКЦЕНТ НА ИИ И ШАБЛОНАХ
+   ========================================================================== */
+:root {
+  --bg3: #EFEAE4;
+  --mint-soft: rgba(103, 201, 146, 0.16);
+  --mint-dark: #3E9E69;
+  --nav-h: 64px;
+}
+[data-theme="dark"] {
+  --bg3: #2E2934;
+  --mint-soft: rgba(103, 201, 146, 0.18);
+  --mint-dark: #7FD9A6;
+}
+
+.topbar { padding: 12px 16px 10px; }
+.topbar-left { min-width: 40px; }
+
+.main-page { padding: 8px 20px 24px; gap: 0; }
+
+/* Плашка ИИ — главный акцент */
+.main-page .quick-zone {
+  padding: 16px 16px 16px;
+  margin: 4px 0 22px;
+  border-radius: 24px;
+}
+.main-page .quick-zone-head { margin-bottom: 12px; }
+.main-page .script-heading.qz-title { font-size: 30px; }
+.main-page .quick-input-row input { height: 46px; }
+.main-page .qz-icon-btn, .main-page .qz-send-btn { flex-basis: 44px; width: 44px; height: 44px; }
+
+/* Быстрые шаблоны — крупные кнопки, переносятся по строкам */
+.templates-block { margin-bottom: 28px; }
+.templates-block .qz-chips-head { margin: 0 2px 10px; }
+.templates-block .templates-row {
+  flex-wrap: wrap;
+  overflow: visible;
+  gap: 10px;
+  padding: 0;
+  margin: 0;
+}
+.templates-block .template-chip {
+  height: 44px;
+  padding: 4px 10px 4px 16px;
+  border: 1px solid var(--border);
+  background: var(--bg2);
+  box-shadow: var(--shadow-sm);
+}
+.templates-block .template-chip.auto {
+  padding: 4px 16px;
+  border: 1px dashed var(--dash-color);
+  background: transparent;
+  box-shadow: none;
+}
+.templates-block .template-chip-btn { font-size: 14.5px; font-weight: 600; gap: 8px; }
+.templates-block .template-chip.auto .template-chip-btn { font-weight: 500; color: var(--text2); }
+.templates-block .template-chip.income:not(.auto) { border-color: var(--mint); }
+.templates-block .templates-empty { padding: 4px 2px; line-height: 1.4; }
+
+/* Итог периода и баланс */
+.period-hero {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 2px 10px;
+}
+.hero-main { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.hero-label {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text);
+}
+.hero-label > span { position: relative; display: inline-block; z-index: 1; padding: 0 4px; }
+.hero-value {
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-size: 40px;
+  font-weight: 600;
+  line-height: 1.05;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.hero-value.income { color: var(--income); }
+.hero-balance {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  background: none;
+  border: 1px dashed var(--dash-color);
+  border-radius: 14px;
+  padding: 8px 12px;
+  font-family: var(--font);
+  color: var(--text);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.hero-balance:active, .hero-balance.open { background: var(--surface2); }
+.hero-balance-label { font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text3); }
+.hero-balance-val { font-size: 15px; font-weight: 700; white-space: nowrap; }
+.hero-balance[data-sign="neg"] .hero-balance-val { color: var(--expense); }
+
+.main-page .balance-panel { margin: 4px 0 12px; }
+
+/* Список операций */
+.ops-block { margin-top: 18px; }
+.ops-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+.ops-head .script-heading.sm { font-size: 30px; }
+.ops-actions { display: flex; gap: 2px; }
+.ops-actions .plain-icon-btn { color: var(--text2); }
+
+.active-filter-row { display: flex; flex-wrap: wrap; gap: 8px; margin: 2px 0 6px; }
+.active-filter-row:empty { display: none; }
+.cat-chip-x { margin-left: 4px; font-size: 16px; line-height: 1; color: var(--text2); }
+
+.day-group-li { margin-top: 22px; }
+.day-group-li:first-child { margin-top: 8px; }
+.day-group-header { gap: 10px; margin-bottom: 2px; }
+.day-watercolor-blob { width: 38px; height: 38px; font-size: 20px; }
+.day-weekday-script { font-size: 27px; }
+.day-sum {
+  margin-left: auto;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text3);
+  white-space: nowrap;
+}
+
+.tx-item {
+  flex-direction: row;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 2px;
+  border-bottom: 1px dashed var(--dash-color);
+}
+.tx-item:last-child { border-bottom: none; }
+.tx-item:focus-visible { outline: 2px solid var(--pink-primary); outline-offset: 2px; border-radius: 10px; }
+.tx-item .pastel-cat-badge { width: 40px; height: 40px; }
+.tx-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.tx-cat {
+  font-size: 15.5px;
+  font-weight: 700;
+  color: var(--text);
+  line-height: 1.25;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tx-sub {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-size: 13px;
+  color: var(--text3);
+  line-height: 1.3;
+}
+.tx-comment-text {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tx-tag {
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--surface2);
+  color: var(--text2);
+}
+.tx-tag.unpaid { background: var(--expense-bg); color: var(--expense); }
+.tx-item .tx-amount { font-size: 15.5px; font-weight: 700; flex-shrink: 0; }
+.tx-item.income .tx-amount { color: var(--income); }
+
+.main-page .empty-state { padding: 28px 12px; line-height: 1.5; }
+
+/* Нижнее меню: 3 кнопки */
+.bottom-nav { grid-template-columns: repeat(3, 1fr); padding: 4px 12px env(safe-area-inset-bottom, 0px); }
+.nav-item { font-size: 12px; gap: 5px; }
+.nav-item .nav-icon { width: 24px; height: 24px; }
+.nav-item.active span { font-weight: 800; }
+
+/* Окно записи: полный комментарий и кнопка «в шаблоны» */
+.comment-row { padding: 8px 0; min-height: 0; }
+.comment-row textarea#txComment {
+  width: 100%;
+  min-height: 40px;
+  max-height: 132px;
+  resize: none;
+  border: 1px solid var(--border);
+  background: var(--bg2);
+  border-radius: 12px;
+  padding: 9px 12px;
+  font-family: var(--font);
+  line-height: 1.4;
+  color: var(--text);
+  overflow-y: auto;
+}
+.comment-row textarea#txComment:focus { border-color: var(--pink-primary); outline: none; }
+.tx-modal-tpl-btn {
+  height: 46px;
+  width: 52px;
+  border: 1px solid var(--pink-card-border);
+  border-radius: 12px;
+  background: var(--pink-soft);
+  font-size: 20px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.tx-modal-tpl-btn:active { background: var(--pink-primary); }
+
+/* Настройки */
+.settings-sheet { gap: 16px; }
+.settings-head { display: flex; align-items: center; justify-content: space-between; }
+.settings-head .tx-sheet-close { margin-right: -8px; }
+.settings-balance-now {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  font-size: 14px;
+  color: var(--text2);
+}
+.settings-balance-now strong {
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-size: 26px;
+  color: var(--text);
+}
+.settings-inline-label { font-size: 13px; font-weight: 600; color: var(--text2); }
+.settings-hint { font-size: 12px; color: var(--text3); line-height: 1.4; }
+.settings-link { align-self: flex-start; padding-left: 0; color: var(--pink-primary); }
+.settings-muted-val { font-size: 14px; font-weight: 700; color: var(--text2); }
+.settings-two-btns { display: flex; gap: 8px; }
+.settings-two-btns > * { flex: 1; min-width: 0; }
+.accounts-list.compact { gap: 8px; margin-bottom: 0; }
+.accounts-list.compact .account-dashed-card { padding: 12px 14px; border-radius: 14px; }
+.accounts-list.compact .account-card-name,
+.accounts-list.compact .account-card-bal { font-size: 15px; }
+
+.settings-group {
+  border-bottom: 1px dashed var(--dash-color);
+  padding-bottom: 12px;
+}
+.settings-group > summary {
+  list-style: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 6px 0;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.settings-group > summary::-webkit-details-marker { display: none; }
+.settings-group > summary::after { content: '›'; font-size: 20px; color: var(--text3); transition: transform var(--transition); }
+.settings-group[open] > summary::after { transform: rotate(90deg); }
+.settings-group > summary .ai-saved-badge { margin-left: auto; }
+.settings-group[open] > .settings-form-stack { margin-top: 10px; }
+.settings-danger-zone > summary { color: var(--expense); }
+.settings-action-btn.danger { color: var(--expense); }

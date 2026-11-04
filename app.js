@@ -1,5 +1,5 @@
 /* ==========================================================================
-   КОШЕЛЕК PWA — ОСНОВНАЯ ЛОГИКА (ПОЛНЫЙ РЕДИЗАЙН + ВСЕ ФУНКЦИИ СОХРАНЕНЫ)
+   КОШЕЛЕК PWA v5 — ОСНОВНАЯ ЛОГИКА (3 ВКЛАДКИ: РАСХОДЫ / ДОХОДЫ / АНАЛИТИКА)
    ========================================================================== */
 
 const STORAGE_KEY = 'koshelek_data';
@@ -43,8 +43,8 @@ let state = {
   transactions: [],
   categories: { expense: [], income: [] },
   accounts: [...DEFAULT_ACCOUNTS],
-  activeNav: 'home',          // 'home' | 'analytics' | 'transactions' | 'accounts' | 'guide'
-  activeTab: 'all',           // Для вкладки Транзакции: 'all' | 'expense' | 'income'
+  activeNav: 'expense',       // v5: 'expense' | 'income' | 'analytics'
+  activeTab: 'expense',       // Тип операций на главном экране: 'expense' | 'income'
   catDialogTab: 'expense',    // Для диалога категорий: 'expense' | 'income'
   analyticsType: 'expense',   // Для вкладки Аналитика: 'expense' | 'income'
   txModalMode: 'expense',     // Для диалога Новая транзакция: 'expense' | 'income' | 'transfer'
@@ -282,7 +282,8 @@ function renderTemplates() {
     ];
   }
 
-  const tplHtml = state.templates.map(t => {
+  const flowType = state.activeTab === 'income' ? 'income' : 'expense';
+  const tplHtml = state.templates.filter(t => (t.type || 'expense') === flowType).map(t => {
     const amt = parseFloat(t.amount) > 0 ? `<b class="tpl-amt">${escapeHtml(fmt(parseFloat(t.amount)).replace(/,00(?=\s)/, ''))}</b>` : '';
     return `<div class="template-chip ${t.type === 'income' ? 'income' : ''}" data-id="${escapeHtml(t.id)}">
       <button class="template-chip-btn" type="button" data-id="${escapeHtml(t.id)}">
@@ -294,12 +295,12 @@ function renderTemplates() {
 
   // Автоматические «частые» категории, которых нет среди шаблонов
   const usedCats = new Set(state.templates.map(t => t.categoryId));
-  const autoCats = getCategoriesByUsage('expense').filter(c => !usedCats.has(c.id)).slice(0, 4);
+  const autoCats = getCategoriesByUsage(flowType).filter(c => !usedCats.has(c.id)).slice(0, 4);
   const autoHtml = autoCats.map(c => `<button type="button" class="template-chip auto" data-auto-cat="${escapeHtml(c.id)}">
       <span class="template-chip-btn"><span>${escapeHtml(c.name)}</span></span>
     </button>`).join('');
 
-  container.innerHTML = tplHtml + autoHtml || '<span class="templates-empty">Здесь появятся частые категории</span>';
+  container.innerHTML = tplHtml + autoHtml || '<span class="templates-empty">Откройте любую запись и нажмите ⭐ — она станет кнопкой</span>';
 
   container.querySelectorAll('.template-chip-btn[data-id]').forEach(btn => {
     btn.addEventListener('click', () => applyTemplate(btn.dataset.id));
@@ -311,7 +312,7 @@ function renderTemplates() {
     });
   });
   container.querySelectorAll('[data-auto-cat]').forEach(btn => {
-    btn.addEventListener('click', () => openAddDialog('expense', btn.dataset.autoCat));
+    btn.addEventListener('click', () => openAddDialog(flowType, btn.dataset.autoCat));
   });
 }
 
@@ -601,8 +602,8 @@ function renderLocalWarningCard() {
   const existing = document.getElementById('localWarningCard');
   if (existing) existing.remove();
   if (state.user) return;
-  if (state.transactions.length <= 5) return;
-
+  // v5: напоминание об облаке убрано из списка — статус облака виден в настройках
+  return;
   const list = document.getElementById('transactionList');
   if (!list) return;
 
@@ -1130,118 +1131,96 @@ function getFiltered() {
   return list;
 }
 
-/* ===== РЕНДЕР БАЛАНСА, ГЛАВНОЙ СТРАНИЦЫ (ДОМОЙ) И СЧЕТОВ ===== */
+/* ===== v5: БАЛАНС, ИТОГ ПЕРИОДА И ГЛАВНЫЙ ЭКРАН (РАСХОДЫ / ДОХОДЫ) ===== */
+function getInitialAccSum() {
+  return (state.accounts || []).reduce((s, a) => s + (parseFloat(a.initialBalance) || 0), 0);
+}
+
+// Стартовый баланс = корректировка (синхронизируется с облаком) + начальные балансы счетов
+function getStartBalance() {
+  return (state.balanceAdjustment || 0) + getInitialAccSum();
+}
+
+function getFlowTotals() {
+  const income = state.transactions.filter(t => t.type === 'income').reduce((s, t) => s + t.amount, 0);
+  const expense = state.transactions.filter(t => t.type === 'expense').reduce((s, t) => s + t.amount, 0);
+  return { income, expense };
+}
+
+function getTotalBalance() {
+  const { income, expense } = getFlowTotals();
+  return getStartBalance() + income - expense;
+}
+
+function setStartBalance(value) {
+  const v = Math.round((Number(value) || 0) * 100) / 100;
+  state.balanceAdjustment = Math.round((v - getInitialAccSum()) * 100) / 100;
+  saveData();
+  render();
+  syncItem('profiles', 'upsert', { balanceAdjustment: state.balanceAdjustment });
+}
+
+function fmtShort(amount) {
+  return fmt(amount).replace(/,00(?=\s)/, '');
+}
+
+function getFlowType() {
+  return state.activeTab === 'income' ? 'income' : 'expense';
+}
+
+function getQuickPlaceholder() {
+  return getFlowType() === 'income' ? 'зарплата 65000, кэшбэк 300…' : 'такси 300, кофе 180…';
+}
+
 function renderBalance() {
-  const allIncome = state.transactions.filter(t => t.type === 'income').reduce((s, t) => s + t.amount, 0);
-  const allExpense = state.transactions.filter(t => t.type === 'expense').reduce((s, t) => s + t.amount, 0);
-  const adj = state.balanceAdjustment || 0;
-  const initialAccSum = (state.accounts || []).reduce((s, a) => s + (parseFloat(a.initialBalance) || 0), 0);
-  const totalNet = allIncome - allExpense + adj + initialAccSum;
-
-  const netEl = document.getElementById('netBalance');
-  const netDetailEl = document.getElementById('netBalanceDetail');
-  const totIncEl = document.getElementById('totalIncome');
-  const totExpEl = document.getElementById('totalExpense');
-  if (netEl) netEl.textContent = fmt(totalNet);
-  if (netDetailEl) netDetailEl.textContent = fmt(totalNet);
-  if (totIncEl) totIncEl.textContent = fmt(allIncome);
-  if (totExpEl) totExpEl.textContent = fmt(allExpense);
-
-  const adjRow = document.getElementById('balanceAdjustmentRow');
-  const adjVal = document.getElementById('balanceAdjustmentVal');
-  if (adjRow && adjVal) {
-    if (adj !== 0) {
-      adjRow.style.display = 'flex';
-      adjVal.textContent = (adj >= 0 ? '+' : '') + fmt(adj);
-    } else {
-      adjRow.style.display = 'none';
-    }
-  }
-
-  const btn = document.getElementById('balanceToggle');
-  if (btn) btn.dataset.sign = totalNet >= 0 ? 'pos' : 'neg';
-
-  // Сводка на вкладке «Домой» за выбранный период
-  const periodTxs = getPeriodTransactions();
-  const pIncome = periodTxs.filter(t => t.type === 'income').reduce((s, t) => s + t.amount, 0);
-  const pExpense = periodTxs.filter(t => t.type === 'expense').reduce((s, t) => s + t.amount, 0);
-  const pBalance = pIncome - pExpense + (state.periodScope === 'all' ? adj : 0);
-
-  const homeBal = document.getElementById('homeBalanceVal');
-  const homeInc = document.getElementById('homeIncomeVal');
-  const homeExp = document.getElementById('homeExpenseVal');
-  if (homeBal) homeBal.textContent = fmt(pBalance);
-  if (homeInc) homeInc.textContent = fmt(pIncome);
-  if (homeExp) homeExp.textContent = fmt(pExpense);
+  const { income, expense } = getFlowTotals();
+  const start = getStartBalance();
+  const totalNet = start + income - expense;
+  const set = (id, text) => { const el = document.getElementById(id); if (el) el.textContent = text; };
+  set('netBalanceDetail', fmt(totalNet));
+  set('totalIncome', fmt(income));
+  set('totalExpense', fmt(expense));
+  set('balanceAdjustmentVal', fmt(start));
+  set('heroBalanceVal', fmtShort(totalNet));
+  set('settingsCurrentBalance', fmt(totalNet));
+  const heroBal = document.getElementById('heroBalanceBtn');
+  if (heroBal) heroBal.dataset.sign = totalNet >= 0 ? 'pos' : 'neg';
 }
 
-function renderHome() {
-  const periodTxs = getPeriodTransactions();
-  renderHomeRecent();
+function renderMainTab() {
+  const type = getFlowType();
+  const isIncome = type === 'income';
+  const set = (id, text) => { const el = document.getElementById(id); if (el) el.textContent = text; };
 
-  // 1. Блок Доход на Главной
-  const incomeTxs = periodTxs.filter(t => t.type === 'income');
-  const incEmpty = document.getElementById('homeIncomeEmpty');
-  const incList = document.getElementById('homeIncomeList');
+  set('quickZoneTitle', isIncome ? 'Что получили?' : 'Что потратили?');
+  const qzInput = document.getElementById('quickZoneInput');
+  const micBtn = document.getElementById('quickZoneMicBtn');
+  if (qzInput && !(micBtn && micBtn.classList.contains('recording'))) qzInput.placeholder = getQuickPlaceholder();
+  set('opsTitle', isIncome ? 'Доходы' : 'Расходы');
 
-  if (incEmpty && incList) {
-    if (!incomeTxs.length) {
-      incEmpty.hidden = false;
-      incList.hidden = true;
-      incList.innerHTML = '';
-    } else {
-      incEmpty.hidden = true;
-      incList.hidden = false;
-      incList.innerHTML = buildCategorySummaryRowsHTML(incomeTxs, 'income', true);
-      bindCategoryRowClicks(incList, 'income');
-    }
+  const periodTxs = getPeriodTransactions().filter(t => t.type === type);
+  const sum = periodTxs.reduce((s, t) => s + t.amount, 0);
+  const periodName = state.periodScope === 'all' ? 'за всё время' : `за ${monthName(state.selectedMonth)}`;
+  const labelEl = document.getElementById('heroLabelText');
+  if (labelEl) {
+    labelEl.textContent = `${isIncome ? 'Получено' : 'Потрачено'} ${periodName}`;
+    labelEl.className = isIncome ? 'hl-green' : 'hl-peach';
   }
-
-  // 2. Блок Расходы на Главной
-  const expenseTxs = periodTxs.filter(t => t.type === 'expense');
-  const expEmpty = document.getElementById('homeExpenseEmpty');
-  const expList = document.getElementById('homeExpenseList');
-
-  if (expEmpty && expList) {
-    if (!expenseTxs.length) {
-      expEmpty.hidden = false;
-      expList.hidden = true;
-      expList.innerHTML = '';
-    } else {
-      expEmpty.hidden = true;
-      expList.hidden = false;
-      expList.innerHTML = buildCategorySummaryRowsHTML(expenseTxs, 'expense', true);
-      bindCategoryRowClicks(expList, 'expense');
-    }
+  set('heroValue', fmtShort(sum));
+  const heroVal = document.getElementById('heroValue');
+  if (heroVal) heroVal.classList.toggle('income', isIncome);
+  const fab = document.getElementById('fabPlusBtn');
+  if (fab) {
+    fab.title = isIncome ? 'Новый доход' : 'Новый расход';
+    fab.setAttribute('aria-label', fab.title);
   }
 }
 
-function renderHomeRecent() {
-  const block = document.getElementById('homeRecentBlock');
-  const list = document.getElementById('homeRecentList');
-  if (!block || !list) return;
-  const items = state.transactions.map((t, i) => ({ t, i }))
-    .sort((a, b) => (b.t.date || '').localeCompare(a.t.date || '') || b.i - a.i)
-    .slice(0, 4).map(x => x.t);
-  if (!items.length) { block.hidden = true; list.innerHTML = ''; return; }
-  block.hidden = false;
-  const today = todayISO();
-  const y = new Date(); y.setDate(y.getDate() - 1);
-  const yest = `${y.getFullYear()}-${String(y.getMonth() + 1).padStart(2, '0')}-${String(y.getDate()).padStart(2, '0')}`;
-  list.innerHTML = items.map(tx => {
-    const cat = getCat(tx.type, tx.categoryId);
-    const when = tx.date === today ? 'Сегодня' : tx.date === yest ? 'Вчера' : fmtDate(tx.date);
-    const title = tx.comment ? escapeHtml(tx.comment) : escapeHtml(cleanCatTitle(cat.name));
-    const sub = tx.comment ? `${when} · ${escapeHtml(cleanCatTitle(cat.name))}` : when;
-    return `<li class="recent-item" data-id="${escapeHtml(tx.id)}">
-      ${renderCatBadgeHTML(cat)}
-      <div class="recent-body"><div class="recent-title">${title}</div><div class="recent-sub">${sub}</div></div>
-      <div class="recent-amount ${tx.type}">${tx.type === 'expense' ? '−' : '+'}${fmt(tx.amount)}</div>
-    </li>`;
-  }).join('');
-  list.querySelectorAll('.recent-item').forEach(li => {
-    li.addEventListener('click', () => openEditDialog(li.dataset.id));
-  });
+function openCategoryInFlow(type, catId) {
+  state.filters.category = catId || 'all';
+  switchNavTab(type === 'income' ? 'income' : 'expense');
+  const sel = document.getElementById('categoryFilter');
+  if (sel) sel.value = state.filters.category;
 }
 
 function buildCategorySummaryRowsHTML(txs, type, showQuickAdd = false) {
@@ -1281,12 +1260,7 @@ function bindCategoryRowClicks(container, type) {
   container.querySelectorAll('.ref-cat-row').forEach(row => {
     row.addEventListener('click', e => {
       if (e.target.closest('.cat-row-quick-add')) return;
-      state.activeTab = type;
-      state.filters.category = row.dataset.catId;
-      document.querySelectorAll('.tx-type-switcher .tab-btn').forEach(b => {
-        b.classList.toggle('active', b.dataset.tab === type);
-      });
-      switchNavTab('transactions');
+      openCategoryInFlow(type, row.dataset.catId);
     });
   });
 }
@@ -1344,39 +1318,27 @@ function renderAccounts() {
 }
 
 /* ===== ЧИПЫ КАТЕГОРИЙ И СПИСОК ТРАНЗАКЦИЙ (РЕФЕРЕНС 5) ===== */
-function renderCategoryTotals(list) {
+function renderCategoryTotals() {
   const section = document.getElementById('categoryTotals');
   if (!section) return;
-
-  const totals = {};
-  const typesForTotals = {};
-  list.forEach(tx => {
-    totals[tx.categoryId] = (totals[tx.categoryId] || 0) + tx.amount;
-    typesForTotals[tx.categoryId] = tx.type;
+  const catId = state.filters.category;
+  if (!catId || catId === 'all') {
+    section.replaceChildren();
+    return;
+  }
+  const cat = getCat(getFlowType(), catId);
+  const chip = document.createElement('button');
+  chip.type = 'button';
+  chip.className = 'cat-chip active';
+  chip.title = 'Сбросить фильтр по категории';
+  chip.innerHTML = `<span class="cat-chip-dot" style="background:${escapeHtml(cat.color || '#F5BD7A')}"></span>${escapeHtml(cleanCatTitle(cat.name))}<span class="cat-chip-x" aria-hidden="true">×</span>`;
+  chip.addEventListener('click', () => {
+    state.filters.category = 'all';
+    const sel = document.getElementById('categoryFilter');
+    if (sel) sel.value = 'all';
+    render();
   });
-
-  const allCats = [...state.categories.expense, ...state.categories.income];
-  const seen = new Set();
-  const chips = [];
-
-  allCats.forEach(c => {
-    if (!totals[c.id] || seen.has(c.id)) return;
-    seen.add(c.id);
-    const chip = document.createElement('button');
-    chip.type = 'button';
-    chip.className = 'cat-chip' + (state.filters.category === c.id ? ' active' : '');
-    chip.style.setProperty('--cat-color', c.color);
-    chip.innerHTML = `<span class="cat-chip-dot" style="background:${escapeHtml(c.color)}"></span>${escapeHtml(cleanCatTitle(c.name))}<span class="cat-chip-amount">${fmt(totals[c.id])}</span>`;
-    chip.addEventListener('click', () => {
-      state.filters.category = state.filters.category === c.id ? 'all' : c.id;
-      const sel = document.getElementById('categoryFilter');
-      if (sel) sel.value = state.filters.category;
-      render();
-    });
-    chips.push(chip);
-  });
-
-  section.replaceChildren(...chips);
+  section.replaceChildren(chip);
 }
 
 const BLOB_COLORS = ['blob-pink', 'blob-peach', 'blob-mint', 'blob-lavender'];
@@ -1417,10 +1379,12 @@ function renderList(list) {
 
       const dayLi = document.createElement('li');
       dayLi.className = 'day-group-li';
+      const daySum = dayGroups[isoDate].reduce((s, t) => s + (t.type === 'expense' ? -t.amount : t.amount), 0);
       dayLi.innerHTML = `
         <div class="day-group-header">
           <div class="day-watercolor-blob ${blobClass}">${dayNum}</div>
           <span class="day-weekday-script">${escapeHtml(weekday)}</span>
+          <span class="day-sum">${daySum < 0 ? '−' : '+'}${fmtShort(Math.abs(daySum))}</span>
         </div>
       `;
 
@@ -1502,36 +1466,29 @@ function renderList(list) {
 
 function createTxItemElement(tx) {
   const cat = getCat(tx.type, tx.categoryId);
-  const displayName = escapeHtml(cleanCatTitle(cat.name));
-  const accName = escapeHtml(getAccountName(tx.accountId || 'default'));
-  const isPaid = tx.paid !== false;
-  const sign = tx.type === 'expense' ? '-' : '+';
+  const catTitle = cleanCatTitle(cat.name);
+  const sign = tx.type === 'expense' ? '−' : '+';
+
+  const meta = [];
+  if (tx.accountId && tx.accountId !== 'default') meta.push(`<span class="tx-tag">${escapeHtml(getAccountName(tx.accountId))}</span>`);
+  if (tx.recurrence && tx.recurrence !== 'none') meta.push('<span class="tx-tag" title="Повторяется">↻</span>');
+  if (tx.paid === false) meta.push('<span class="tx-tag unpaid">не оплачено</span>');
+  const commentHtml = tx.comment ? `<span class="tx-comment-text">${escapeHtml(tx.comment)}</span>` : '';
+  const subline = (commentHtml || meta.length) ? `<div class="tx-sub">${meta.join('')}${commentHtml}</div>` : '';
 
   const li = document.createElement('li');
   li.className = `tx-item ${tx.type}`;
   li.dataset.id = tx.id;
+  li.tabIndex = 0;
+  li.setAttribute('role', 'button');
+  li.setAttribute('aria-label', `${catTitle}, ${sign}${fmt(tx.amount)}${tx.comment ? ', ' + tx.comment : ''}. Открыть и изменить`);
   li.innerHTML = `
-    <div class="tx-item-main">
-      <div class="tx-left">
-        ${renderCatBadgeHTML(cat)}
-        <div class="tx-body">
-          <div class="tx-cat">${displayName}</div>
-          <div class="tx-account-sub">${accName}</div>
-        </div>
-      </div>
-      <div class="tx-right">
-        <div class="tx-amount">${sign}${fmt(tx.amount)}</div>
-        <button type="button" class="tx-paid-indicator ${isPaid ? 'paid' : 'unpaid'}" data-toggle-paid="${escapeHtml(tx.id)}" title="${isPaid ? 'Оплачено' : 'Не оплачено'}">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
-        </button>
-      </div>
+    ${renderCatBadgeHTML(cat)}
+    <div class="tx-body">
+      <div class="tx-cat">${escapeHtml(catTitle)}</div>
+      ${subline}
     </div>
-    ${tx.comment ? `<div class="tx-comment-below">${escapeHtml(tx.comment)}</div>` : ''}
-    <div class="tx-actions">
-      <button type="button" class="tx-btn template-add" title="Сохранить как шаблон" data-id="${escapeHtml(tx.id)}"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg></button>
-      <button type="button" class="tx-btn edit" title="Редактировать" data-id="${escapeHtml(tx.id)}"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg></button>
-      <button type="button" class="tx-btn del" title="Удалить" data-id="${escapeHtml(tx.id)}"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg></button>
-    </div>
+    <div class="tx-amount">${sign}${fmt(tx.amount)}</div>
   `;
   return li;
 }
@@ -1634,7 +1591,7 @@ function renderAccountSelects() {
 function render() {
   updateMonthHeaderUI();
   renderBalance();
-  renderHome();
+  renderMainTab();
   renderAccounts();
   renderCategoryFilter();
   const list = getFiltered();
@@ -1648,61 +1605,69 @@ function render() {
 }
 
 function switchNavTab(navName) {
+  if (!['expense', 'income', 'analytics'].includes(navName)) navName = 'expense';
+  const prevNav = state.activeNav;
   state.activeNav = navName;
   state.viewMode = navName === 'analytics' ? 'dashboard' : 'list';
+  if (navName !== 'analytics') state.activeTab = navName;
 
-  const sections = {
-    home: document.getElementById('homeSection'),
-    analytics: document.getElementById('analyticsSection'),
-    transactions: document.getElementById('listSection'),
-    accounts: document.getElementById('accountsSection'),
-    guide: document.getElementById('guideSection')
-  };
-
-  Object.entries(sections).forEach(([key, el]) => {
-    if (el) el.hidden = (key !== navName);
-  });
-
+  const mainSection = document.getElementById('mainSection');
+  const analyticsSection = document.getElementById('analyticsSection');
+  if (mainSection) mainSection.hidden = navName === 'analytics';
+  if (analyticsSection) analyticsSection.hidden = navName !== 'analytics';
   document.querySelectorAll('.nav-item').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.nav === navName);
   });
+  document.body.dataset.flow = navName;
 
-  const monthNavBar = document.getElementById('monthNavBar');
-  const staticPageTitle = document.getElementById('staticPageTitle');
-  const triangleIcon = document.getElementById('topLeftTriangleIcon');
-  const calendarIcon = document.getElementById('topLeftCalendarIcon');
-  const txTopActions = document.getElementById('txTopActions');
-  const settingsBtn = document.getElementById('settingsBtn');
-  const fabHeartBtn = document.getElementById('fabHeartBtn');
   const floatingWrap = document.getElementById('floatingActionsWrap');
+  if (floatingWrap) floatingWrap.hidden = navName === 'analytics';
+  const panel = document.getElementById('balancePanel');
+  if (panel) panel.hidden = true;
 
-  if (navName === 'accounts') {
-    if (monthNavBar) monthNavBar.hidden = true;
-    if (staticPageTitle) {
-      staticPageTitle.hidden = false;
-      staticPageTitle.textContent = 'СЧЕТА';
-    }
-    if (floatingWrap) floatingWrap.hidden = true;
-  } else if (navName === 'guide') {
-    if (monthNavBar) monthNavBar.hidden = true;
-    if (staticPageTitle) {
-      staticPageTitle.hidden = false;
-      staticPageTitle.textContent = 'ИНСТРУМЕНТЫ';
-    }
-    if (floatingWrap) floatingWrap.hidden = false;
-  } else {
-    if (monthNavBar) monthNavBar.hidden = false;
-    if (staticPageTitle) staticPageTitle.hidden = true;
-    if (floatingWrap) floatingWrap.hidden = false;
+  // Аналитика открывается на том же типе, с которого пришли
+  if (navName === 'analytics' && (prevNav === 'expense' || prevNav === 'income')) {
+    state.analyticsType = prevNav;
+    document.getElementById('analyticsExpensePill')?.classList.toggle('active-expense', prevNav === 'expense');
+    document.getElementById('analyticsIncomePill')?.classList.toggle('active-income', prevNav === 'income');
   }
 
-  if (triangleIcon) triangleIcon.hidden = (navName === 'transactions');
-  if (calendarIcon) calendarIcon.hidden = (navName !== 'transactions');
-  if (txTopActions) txTopActions.hidden = (navName !== 'transactions');
-  if (settingsBtn) settingsBtn.hidden = (navName === 'transactions');
-  if (fabHeartBtn) fabHeartBtn.hidden = (navName !== 'home');
+  const tplRow = document.getElementById('quickTemplates');
+  const tplEditBtn = document.getElementById('quickChipsEditBtn');
+  if (tplRow && tplRow.classList.contains('editing')) {
+    tplRow.classList.remove('editing');
+    if (tplEditBtn) tplEditBtn.textContent = 'изменить';
+  }
 
   render();
+  window.scrollTo(0, 0);
+}
+
+function autosizeTxComment() {
+  const el = document.getElementById('txComment');
+  if (!el) return;
+  el.style.height = 'auto';
+  el.style.height = Math.min(el.scrollHeight, 132) + 'px';
+}
+
+function fillSettingsBalance() {
+  const el = document.getElementById('startBalanceInput');
+  if (el) el.value = String(Math.round(getStartBalance() * 100) / 100);
+  renderBalance();
+}
+
+function saveStartBalanceFromInput() {
+  const el = document.getElementById('startBalanceInput');
+  if (!el) return;
+  const raw = String(el.value).replace(',', '.').trim();
+  const v = raw === '' ? 0 : parseFloat(raw);
+  if (isNaN(v)) {
+    showToast('Введите число');
+    return;
+  }
+  setStartBalance(v);
+  fillSettingsBalance();
+  showToast('✅ Стартовый баланс сохранён');
 }
 
 /* ===== МОДАЛЬНОЕ ОКНО ТРАНЗАКЦИИ + ЦИФРОВАЯ КЛАВИАТУРА ===== */
@@ -1828,6 +1793,8 @@ function openAddDialog(forcedMode, preselectedCategoryId) {
 
   const delBtn = document.getElementById('deleteTxInModalBtn');
   if (delBtn) delBtn.hidden = true;
+  const tplBtn = document.getElementById('txSaveTemplateBtn');
+  if (tplBtn) tplBtn.hidden = true;
   const saveBtn = document.getElementById('bottomSaveTxBtn');
   if (saveBtn) saveBtn.textContent = '✓ Сохранить запись';
 
@@ -1874,6 +1841,7 @@ function openAddDialog(forcedMode, preselectedCategoryId) {
 
   setTxMoreOpen(mode === 'transfer');
   document.getElementById('transactionDialog').showModal();
+  autosizeTxComment();
 }
 
 function openEditDialog(id) {
@@ -1886,6 +1854,8 @@ function openEditDialog(id) {
 
   const delBtn = document.getElementById('deleteTxInModalBtn');
   if (delBtn) delBtn.hidden = false;
+  const tplBtn = document.getElementById('txSaveTemplateBtn');
+  if (tplBtn) tplBtn.hidden = false;
   const saveBtn = document.getElementById('bottomSaveTxBtn');
   if (saveBtn) saveBtn.textContent = '✓ Сохранить изменения';
 
@@ -1920,6 +1890,7 @@ function openEditDialog(id) {
 
   setTxMoreOpen(tx.paid === false || (tx.recurrence && tx.recurrence !== 'none') || (tx.accountId && tx.accountId !== 'default'));
   document.getElementById('transactionDialog').showModal();
+  autosizeTxComment();
 }
 
 function saveTransaction(e) {
@@ -2505,7 +2476,7 @@ async function quickAiSmartImport(inputText) {
   const prompt = `System Context: Parse raw financial text into JSON array of transactions.
 Current Date: ${currentDate}.
 Fields per transaction:
-- "type": "expense" or "income"
+- "type": "expense" or "income" (if unclear, use "${getFlowType()}")
 - "amount": positive number
 - "categoryName": category name matching one of: ${state.categories.expense.concat(state.categories.income).map(c => c.name).join(', ')}
 - "date": YYYY-MM-DD (default ${currentDate})
@@ -2522,6 +2493,7 @@ ${inputText}`;
     if (!Array.isArray(parsed)) throw new Error('NOT_ARRAY');
 
     let importedCount = 0;
+    const addedIds = [];
     const colors = ['#F5BD7A', '#F48278', '#E46C99', '#67C992', '#B794F4'];
 
     parsed.forEach(item => {
@@ -2536,9 +2508,10 @@ ${inputText}`;
       if (!cat) {
         cat = { id: uid(), name: cleanCatName, color: colors[Math.floor(Math.random() * colors.length)] };
         state.categories[type].push(cat);
+        syncItem('categories', 'upsert', { id: cat.id, type, name: cat.name, color: cat.color });
       }
       const txDate = item.date || currentDate;
-      state.transactions.push({
+      const newTx = {
         id: uid(),
         type,
         amount: parseFloat(item.amount),
@@ -2546,8 +2519,12 @@ ${inputText}`;
         date: txDate,
         comment: item.comment || '',
         accountId: 'default',
-        paid: true
-      });
+        paid: true,
+        recurrence: 'none'
+      };
+      state.transactions.push(newTx);
+      addedIds.push(newTx.id);
+      syncItem('transactions', 'upsert', newTx);
       importedCount++;
     });
 
@@ -2555,7 +2532,7 @@ ${inputText}`;
     render();
     const d = document.getElementById('quickAiAddDialog');
     if (d) d.close();
-    showToast(`🪄 ИИ распознал и добавил ${importedCount} операций!`);
+    showToast(`🪄 ИИ распознал и добавил ${importedCount} операций!`, addedIds.length ? () => undoQuickTx(addedIds) : undefined);
   } catch {
     showToast('Ошибка ИИ при распознавании текста');
   } finally {
@@ -2647,6 +2624,8 @@ function openSettingsDialog() {
   const supabaseKeyEl = document.getElementById('supabaseKeyInput');
   if (supabaseKeyEl) supabaseKeyEl.value = localStorage.getItem('supabase_key') || '';
 
+  fillSettingsBalance();
+  renderAccounts();
   document.getElementById('settingsDialog').showModal();
 }
 
@@ -2878,9 +2857,7 @@ function renderDashDonutChart(txs) {
 
   stage.querySelectorAll('.donut-slice-path').forEach(slice => {
     slice.addEventListener('click', () => {
-      state.activeTab = targetType;
-      state.filters.category = slice.dataset.cat;
-      switchNavTab('transactions');
+      openCategoryInFlow(targetType, slice.dataset.cat);
     });
   });
 
@@ -3425,7 +3402,7 @@ function findCategoryByText(rest) {
   const words = rest.split(/\s+/).map(normWord).filter(w => w.length >= 3);
   if (!words.length) return null;
   let best = null, bestScore = 0;
-  ['expense', 'income'].forEach(type => {
+  (getFlowType() === 'income' ? ['income', 'expense'] : ['expense', 'income']).forEach(type => {
     (state.categories[type] || []).forEach(c => {
       cleanCatTitle(c.name).split(/\s+/).map(normWord).filter(w => w.length >= 3).forEach(nw => {
         words.forEach(w => {
@@ -3488,7 +3465,7 @@ async function submitQuickZone(raw) {
     return;
   }
   const first = leftovers[0];
-  openAddDialog(first.p.plus ? 'income' : 'expense');
+  openAddDialog(first.p.plus ? 'income' : getFlowType());
   const amtInput = document.getElementById('txAmount');
   if (amtInput) { amtInput.value = String(first.p.amount); updateTxAmountUI(); }
   const commentEl = document.getElementById('txComment');
@@ -3512,7 +3489,7 @@ function initQuickZoneVoice() {
     else { try { rec.start(); } catch {} }
   });
   rec.onstart = () => { listening = true; btn.classList.add('recording'); input.placeholder = 'Слушаю… например: такси 300'; };
-  rec.onend = () => { listening = false; btn.classList.remove('recording'); input.placeholder = 'такси 300, кофе 180…'; };
+  rec.onend = () => { listening = false; btn.classList.remove('recording'); input.placeholder = getQuickPlaceholder(); };
   rec.onresult = ev => {
     const text = ev.results[0] && ev.results[0][0] ? ev.results[0][0].transcript : '';
     if (text) { input.value = text; submitQuickZone(text); }
@@ -3578,6 +3555,29 @@ function bindQuickEvents() {
     document.getElementById('txDate').value = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
     updateTxDateLabel();
   });
+  safeBind('closeSettingsX', 'click', () => document.getElementById('settingsDialog')?.close());
+  safeBind('settingsAdjustBalanceBtn', 'click', promptBalanceAdjustment);
+  safeBind('settingsCategoriesBtn', 'click', () => openCategoryDialog(getFlowType()));
+  safeBind('saveStartBalanceBtn', 'click', saveStartBalanceFromInput);
+  safeBind('startBalanceInput', 'keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); saveStartBalanceFromInput(); }
+  });
+  safeBind('txSaveTemplateBtn', 'click', () => {
+    if (state.editingId) saveAsTemplate(state.editingId);
+  });
+  safeBind('txComment', 'input', autosizeTxComment);
+  safeBind('groupingSelect', 'change', e => {
+    state.txGroupingMode = e.target.value === 'year_month' ? 'year_month' : 'day';
+    renderList(getFiltered());
+  });
+  const txListEl = document.getElementById('transactionList');
+  if (txListEl) {
+    txListEl.addEventListener('keydown', e => {
+      if (e.key !== 'Enter' && e.key !== ' ') return;
+      const item = e.target.closest('.tx-item');
+      if (item) { e.preventDefault(); openEditDialog(item.dataset.id); }
+    });
+  }
   safeBind('txAccount', 'change', updateTxMoreSummary);
   safeBind('txRecurrence', 'change', updateTxMoreSummary);
   safeBind('txPaidToggleBtn', 'click', updateTxMoreSummary);
@@ -3589,56 +3589,21 @@ function safeBind(id, event, cb) {
 }
 
 function promptBalanceAdjustment() {
-  const income = state.transactions.filter(t => t.type === 'income').reduce((s, t) => s + t.amount, 0);
-  const expense = state.transactions.filter(t => t.type === 'expense').reduce((s, t) => s + t.amount, 0);
-  const calculated = income - expense;
-  const currentAdj = state.balanceAdjustment || 0;
-  const currentReal = calculated + currentAdj;
-
   const dialog = document.getElementById('adjustBalanceDialog');
   const inputEl = document.getElementById('adjustBalanceInput');
-  const infoEl = document.getElementById('adjustBalanceCalcInfo');
-  if (dialog && inputEl) {
-    if (infoEl) {
-      infoEl.textContent = `Расчётный: ${fmt(calculated)} · Корректировка: ${fmt(currentAdj)} · Текущий: ${fmt(currentReal)}`;
-    }
-    inputEl.value = String(Math.round(currentReal * 100) / 100);
-    dialog.showModal();
-    return;
-  }
-
-  const input = prompt(
-    `Введите фактическую сумму баланса (₽):\n\nРасчётный баланс: ${fmt(calculated)}\nТекущая корректировка: ${fmt(currentAdj)}\nОтображаемый баланс: ${fmt(currentReal)}`,
-    String(Math.round(currentReal * 100) / 100)
-  );
-  if (input === null) return;
-  const newReal = parseFloat(input.replace(',', '.').replace(/[^0-9.\-]/g, ''));
-  if (isNaN(newReal)) {
-    showToast('Введите корректное число');
-    return;
-  }
-  state.balanceAdjustment = newReal - calculated;
-  saveData();
-  render();
-  syncItem('profiles', 'upsert', { balanceAdjustment: state.balanceAdjustment });
-  showToast('✅ Баланс скорректирован!');
+  if (!dialog || !inputEl) return;
+  inputEl.value = String(Math.round(getTotalBalance() * 100) / 100);
+  dialog.showModal();
 }
 
 function bindBalanceToggle() {
-  const btn = document.getElementById('balanceToggle');
-  const detailsBtn = document.getElementById('homeBalanceDetailsBtn');
-  const summaryCols = document.getElementById('homeSummaryCols');
+  const btn = document.getElementById('heroBalanceBtn');
   const panel = document.getElementById('balancePanel');
-  if (!panel) return;
-
-  const togglePanel = () => {
+  if (!btn || !panel) return;
+  btn.addEventListener('click', () => {
     panel.hidden = !panel.hidden;
-    if (btn) btn.classList.toggle('open', !panel.hidden);
-  };
-
-  if (btn) btn.addEventListener('click', togglePanel);
-  if (detailsBtn) detailsBtn.addEventListener('click', togglePanel);
-  if (summaryCols) summaryCols.addEventListener('click', togglePanel);
+    btn.classList.toggle('open', !panel.hidden);
+  });
 }
 
 /* Блокировка любого случайного зума на мобильных устройствах (iOS Safari / Android Chrome) */
@@ -3663,7 +3628,7 @@ function bindEvents() {
   // 1. Нижняя навигация (5 вкладок по референсу)
   document.querySelectorAll('.nav-item').forEach(btn => {
     btn.addEventListener('click', () => {
-      if (btn.dataset.nav === 'transactions') {
+      if (btn.dataset.nav !== state.activeNav) {
         state.filters.category = 'all';
         const catFilter = document.getElementById('categoryFilter');
         if (catFilter) catFilter.value = 'all';
@@ -3710,15 +3675,11 @@ function bindEvents() {
       showToast('Введите корректное число');
       return;
     }
-    const income = state.transactions.filter(t => t.type === 'income').reduce((s, t) => s + t.amount, 0);
-    const expense = state.transactions.filter(t => t.type === 'expense').reduce((s, t) => s + t.amount, 0);
-    const calculated = income - expense;
-    state.balanceAdjustment = newReal - calculated;
-    saveData();
-    render();
+    const { income, expense } = getFlowTotals();
+    setStartBalance(newReal - (income - expense));
     document.getElementById('adjustBalanceDialog')?.close();
-    syncItem('profiles', 'upsert', { balanceAdjustment: state.balanceAdjustment });
-    showToast('✅ Баланс скорректирован!');
+    fillSettingsBalance();
+    showToast('✅ Баланс обновлён');
   });
 
   // 6. Плавающие кнопки справа внизу (Сердечко = ИИ/Голос, Плюс = Новая транзакция)
@@ -3906,13 +3867,14 @@ function bindEvents() {
   });
   safeBind('transferBalanceBtn', 'click', () => {
     if ((state.accounts || []).length < 2) {
-      promptBalanceAdjustment();
-    } else {
-      openAddDialog('transfer');
+      showToast('Сначала создайте второй счёт');
+      return;
     }
+    document.getElementById('settingsDialog')?.close();
+    openAddDialog('transfer');
   });
   safeBind('accountsAdjustBalanceBtn', 'click', promptBalanceAdjustment);
-  safeBind('adjustBalanceBtn', 'click', promptBalanceAdjustment);
+  safeBind('adjustBalanceBtn', 'click', () => openSettingsDialog());
 
   // 13. Вкладка РУКОВОДСТВО
   safeBind('guideQuickAiBtn', 'click', () => document.getElementById('quickAiAddBtn')?.click());
@@ -4210,15 +4172,13 @@ function init() {
   bindEvents();
   bindQuickEvents();
   initQuickZoneVoice();
-  switchNavTab('home');
+  switchNavTab('expense');
   registerSW();
   initVoiceInput();
 
   const params = new URLSearchParams(location.search);
   if (params.get('tab')) {
-    const tab = params.get('tab');
-    state.activeTab = tab === 'income' ? 'income' : 'expense';
-    switchNavTab('transactions');
+    switchNavTab(params.get('tab') === 'income' ? 'income' : 'expense');
   }
   if (params.get('action') === 'add') {
     setTimeout(() => openAddDialog(params.get('tab') === 'income' ? 'income' : 'expense'), 250);

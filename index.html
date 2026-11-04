@@ -21,36 +21,14 @@
   <div class="paper-bg" aria-hidden="true"></div>
 
   <div class="app-shell">
-    <!-- ================= ВЕРХНЯЯ ШАПКА (АДАПТИВНАЯ ПОД АКТИВНУЮ ВКЛАДКУ) ================= -->
+    <!-- ================= ВЕРХНЯЯ ШАПКА: МЕСЯЦ ПО ЦЕНТРУ, НАСТРОЙКИ СПРАВА ================= -->
     <header class="topbar" id="mainTopbar">
       <div class="topbar-left">
-        <button id="topLeftActionBtn" class="plain-icon-btn" type="button" title="Быстрые действия" aria-label="Быстрые действия">
-          <!-- Иконка меню/руководства (Домой) -->
-          <svg id="topLeftTriangleIcon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
-          </svg>
-          <!-- Иконка календаря (Транзакции) -->
-          <svg id="topLeftCalendarIcon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" hidden>
-            <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
-            <line x1="16" y1="2" x2="16" y2="6"></line>
-            <line x1="8" y1="2" x2="8" y2="6"></line>
-            <line x1="3" y1="10" x2="21" y2="10"></line>
-            <circle cx="8" cy="14" r="1" fill="currentColor"></circle>
-            <circle cx="12" cy="14" r="1" fill="currentColor"></circle>
-            <circle cx="16" cy="14" r="1" fill="currentColor"></circle>
-            <circle cx="8" cy="18" r="1" fill="currentColor"></circle>
-            <circle cx="12" cy="18" r="1" fill="currentColor"></circle>
-          </svg>
-        </button>
-
-        <!-- Скрытый компактный переключатель баланса для совместимости -->
-        <button id="balanceToggle" class="balance-compact sr-only-compat" type="button" aria-label="Показать детали баланса">
-          <span id="netBalance" class="balance-compact-value">0,00 ₽</span>
-          <span class="balance-compact-arrow">›</span>
+        <button id="cloudStatusBadge" class="status-badge local" type="button" title="Локальный режим. Нажмите, чтобы узнать больше." aria-label="Статус облачной синхронизации" hidden>
+          <span class="status-badge-icon">☁️</span>
         </button>
       </div>
 
-      <!-- Центральная навигация по месяцам / Заголовок страницы -->
       <div class="topbar-center">
         <div id="monthNavBar" class="month-nav">
           <button id="prevMonthBtn" class="month-arrow-btn" type="button" aria-label="Предыдущий месяц">
@@ -66,35 +44,9 @@
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
           </button>
         </div>
-        <h1 id="staticPageTitle" class="static-page-title" hidden>СЧЕТА</h1>
       </div>
 
-      <!-- Правые кнопки: Настройки или Фильтр + Поиск (на Транзакциях) -->
       <div class="topbar-right">
-        <button id="cloudStatusBadge" class="status-badge local" type="button" title="Локальный режим. Нажмите, чтобы узнать больше." aria-label="Статус облачной синхронизации" hidden>
-          <span class="status-badge-icon">☁️</span>
-        </button>
-
-        <button id="dashboardBtn" class="plain-icon-btn" type="button" aria-label="Аналитика" title="Аналитика" hidden>
-          <svg id="dashboardIcon" width="18" height="18" viewBox="0 0 18 18" fill="none"><rect x="1" y="9" width="3" height="8" rx="1" fill="currentColor"/><rect x="6" y="5" width="3" height="12" rx="1" fill="currentColor"/><rect x="11" y="1" width="3" height="16" rx="1" fill="currentColor"/></svg>
-        </button>
-
-        <div id="txTopActions" class="tx-top-actions" hidden>
-          <button id="toggleFilters" class="plain-icon-btn" type="button" aria-label="Фильтры" title="Фильтры">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round">
-              <line x1="4" y1="7" x2="20" y2="7"></line>
-              <line x1="7" y1="12" x2="17" y2="12"></line>
-              <line x1="10" y1="17" x2="14" y2="17"></line>
-            </svg>
-          </button>
-          <button id="topSearchBtn" class="plain-icon-btn" type="button" aria-label="Поиск" title="Поиск">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
-              <circle cx="11" cy="11" r="7"></circle>
-              <line x1="20" y1="20" x2="16.35" y2="16.35"></line>
-            </svg>
-          </button>
-        </div>
-
         <button id="settingsBtn" class="plain-icon-btn" type="button" aria-label="Настройки" title="Настройки">
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
             <circle cx="12" cy="12" r="3"></circle>
@@ -104,40 +56,12 @@
       </div>
     </header>
 
-    <!-- Выпадающая панель деталей и корректировки баланса -->
-    <div id="balancePanel" class="balance-panel" hidden>
-      <div class="balance-panel-inner">
-        <div class="balance-panel-row">
-          <span class="balance-panel-label">Доходы (всего)</span>
-          <span id="totalIncome" class="balance-panel-val income">0,00 ₽</span>
-        </div>
-        <div class="balance-panel-row">
-          <span class="balance-panel-label">Расходы (всего)</span>
-          <span id="totalExpense" class="balance-panel-val expense">0,00 ₽</span>
-        </div>
-        <div id="balanceAdjustmentRow" class="balance-panel-row adjustment" style="display: none;">
-          <span class="balance-panel-label">Корректировка</span>
-          <span id="balanceAdjustmentVal" class="balance-panel-val">0,00 ₽</span>
-        </div>
-        <div class="balance-panel-row total">
-          <span class="balance-panel-label">Общий баланс кошелька</span>
-          <span id="netBalanceDetail" class="balance-panel-val">0,00 ₽</span>
-        </div>
-        <div class="balance-panel-actions">
-          <button id="adjustBalanceBtn" class="pill-outline-btn sm" type="button">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
-            <span>Корректировать баланс</span>
-          </button>
-        </div>
-      </div>
-    </div>
-
-    <!-- ================= ВКЛАДКА 1: ДОМОЙ ================= -->
-    <main id="homeSection" class="page-section">
-      <!-- БЫСТРЫЙ ВВОД: запись за 5–10 секунд -->
+    <!-- ================= ВКЛАДКИ «РАСХОДЫ» И «ДОХОДЫ» (ОДИН ЭКРАН, МЕНЯЕТСЯ ТИП) ================= -->
+    <main id="mainSection" class="page-section main-page">
+      <!-- Плашка быстрого добавления: текст / голос / ИИ -->
       <section class="quick-zone" id="quickZone">
         <div class="quick-zone-head">
-          <h2 class="script-heading qz-title">Что потратили?</h2>
+          <h2 id="quickZoneTitle" class="script-heading qz-title">Что потратили?</h2>
           <button id="quickAiAddBtn" class="quick-ai-btn" type="button" title="Несколько записей сразу через ИИ">
             <span>✨ Несколько сразу</span>
           </button>
@@ -147,75 +71,106 @@
           <button type="button" id="quickZoneMicBtn" class="qz-icon-btn" aria-label="Сказать голосом"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" y1="19" x2="12" y2="22"></line></svg></button>
           <button type="submit" id="quickZoneSendBtn" class="qz-send-btn" aria-label="Добавить"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg></button>
         </form>
+      </section>
+
+      <!-- Быстрые шаблоны -->
+      <section class="templates-block">
         <div class="qz-chips-head">
-          <span class="templates-title">⚡ Быстрые кнопки</span>
+          <span class="templates-title">⚡ Быстрые шаблоны</span>
           <button id="quickChipsEditBtn" class="text-link-btn" type="button">изменить</button>
         </div>
         <div id="quickTemplates" class="templates-row"></div>
       </section>
 
-      <!-- Сводка -->
-      <section class="home-summary-section">
-        <div class="home-block-header">
-          <h2 class="script-heading sm">Сводка</h2>
-          <button id="homeBalanceDetailsBtn" class="text-link-btn" type="button">Баланс ›</button>
+      <!-- Итог периода + баланс -->
+      <section class="period-hero">
+        <div class="hero-main">
+          <span id="heroLabel" class="hero-label"><span id="heroLabelText" class="hl-peach">ПОТРАЧЕНО</span></span>
+          <span id="heroValue" class="hero-value">0 ₽</span>
         </div>
-        <div class="summary-three-cols" id="homeSummaryCols" title="Нажмите для подробностей или корректировки баланса">
-          <div class="summary-col">
-            <span class="summary-col-label hl-blue">БАЛАНС</span>
-            <span id="homeBalanceVal" class="summary-col-value">0,00 ₽</span>
-          </div>
-          <div class="summary-col">
-            <span class="summary-col-label hl-green">ДОХОД</span>
-            <span id="homeIncomeVal" class="summary-col-value">0,00 ₽</span>
-          </div>
-          <div class="summary-col">
-            <span class="summary-col-label hl-peach">РАСХОДЫ</span>
-            <span id="homeExpenseVal" class="summary-col-value">0,00 ₽</span>
-          </div>
-        </div>
+        <button id="heroBalanceBtn" class="hero-balance" type="button" title="Подробнее о балансе">
+          <span class="hero-balance-label">Баланс</span>
+          <span id="heroBalanceVal" class="hero-balance-val">0 ₽</span>
+        </button>
       </section>
 
-      <!-- Последние записи -->
-      <section class="home-block" id="homeRecentBlock" hidden>
-        <div class="home-block-header">
-          <h2 class="script-heading sm">Последние</h2>
-          <button id="homeAllTxBtn" class="text-link-btn" type="button">Все ›</button>
-        </div>
-        <ul id="homeRecentList" class="recent-list"></ul>
-      </section>
-
-      <!-- Блок «Расходы» -->
-      <section class="home-block">
-        <div class="home-block-header">
-          <h2 class="script-heading sm">Расходы</h2>
-          <div class="home-block-actions">
-            <button id="homeManageCategoriesBtn" class="text-link-btn" type="button">Категории</button>
-            <button id="homeAddExpenseBtn" class="quick-sect-add-btn expense" type="button">+ Расход</button>
+      <!-- Детали баланса (раскрываются по нажатию на «Баланс») -->
+      <div id="balancePanel" class="balance-panel" hidden>
+        <div class="balance-panel-inner">
+          <div class="balance-panel-row">
+            <span class="balance-panel-label">Стартовый баланс</span>
+            <span id="balanceAdjustmentVal" class="balance-panel-val">0,00 ₽</span>
+          </div>
+          <div class="balance-panel-row">
+            <span class="balance-panel-label">Доходы (всего)</span>
+            <span id="totalIncome" class="balance-panel-val income">0,00 ₽</span>
+          </div>
+          <div class="balance-panel-row">
+            <span class="balance-panel-label">Расходы (всего)</span>
+            <span id="totalExpense" class="balance-panel-val expense">0,00 ₽</span>
+          </div>
+          <div class="balance-panel-row total">
+            <span class="balance-panel-label">Баланс сейчас</span>
+            <span id="netBalanceDetail" class="balance-panel-val">0,00 ₽</span>
+          </div>
+          <div class="balance-panel-actions">
+            <button id="adjustBalanceBtn" class="text-link-btn" type="button">Изменить в настройках ›</button>
           </div>
         </div>
-        <div id="homeExpenseEmpty" class="dashed-empty-card" role="button" tabindex="0" hidden>
-          <span class="coral-plus-circle" aria-hidden="true">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2.2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
-          </span>
-          <p class="dashed-empty-text">Расходов за этот период нет. Напишите выше или нажмите сюда.</p>
-        </div>
-        <ul id="homeExpenseList" class="ref-category-list"></ul>
-      </section>
+      </div>
 
-      <!-- Блок «Доход» -->
-      <section class="home-block">
-        <div class="home-block-header">
-          <h2 class="script-heading sm">Доход</h2>
-          <button id="homeAddIncomeBtn" class="quick-sect-add-btn income" type="button">+ Доход</button>
+      <!-- Операции за период -->
+      <section class="ops-block">
+        <div class="ops-head">
+          <h2 id="opsTitle" class="script-heading sm">Операции</h2>
+          <div class="ops-actions">
+            <button id="topSearchBtn" class="plain-icon-btn" type="button" aria-label="Поиск" title="Поиск">
+              <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"></circle><line x1="20" y1="20" x2="16.35" y2="16.35"></line></svg>
+            </button>
+            <button id="toggleFilters" class="plain-icon-btn" type="button" aria-label="Фильтры" title="Фильтры">
+              <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="4" y1="7" x2="20" y2="7"></line><line x1="7" y1="12" x2="17" y2="12"></line><line x1="10" y1="17" x2="14" y2="17"></line></svg>
+            </button>
+          </div>
         </div>
-        <div id="homeIncomeEmpty" class="dashed-empty-card" role="button" tabindex="0" aria-label="Добавить доход">
-          <span class="mint-plus-circle" aria-hidden="true">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2.2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
-          </span>
-          <p class="dashed-empty-text">Доходов за этот период нет. Нажмите, чтобы добавить.</p>
-        </div>
-        <ul id="homeIncomeList" class="ref-category-list" hidden></ul>
+
+        <section id="toolbarSection" class="toolbar">
+          <div class="search-row">
+            <input id="searchInput" type="search" placeholder="Поиск по комментариям и категориям">
+            <button id="resetFiltersBtn" class="icon-btn" type="button" aria-label="Сбросить фильтры" title="Сбросить фильтры">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
+            </button>
+          </div>
+          <div class="row">
+            <select id="categoryFilter"></select>
+            <select id="sortSelect">
+              <option value="date_desc">Новые сначала</option>
+              <option value="date_asc">Старые сначала</option>
+              <option value="amount_desc">Сумма: больше</option>
+              <option value="amount_asc">Сумма: меньше</option>
+              <option value="category_asc">Категория А-Я</option>
+            </select>
+          </div>
+          <div class="row">
+            <input id="dateFrom" type="date" aria-label="Дата от">
+            <input id="dateTo" type="date" aria-label="Дата до">
+          </div>
+          <div class="row">
+            <input id="amountMin" type="number" min="0" step="0.01" placeholder="Сумма от">
+            <input id="amountMax" type="number" min="0" step="0.01" placeholder="Сумма до">
+          </div>
+          <div class="row">
+            <select id="groupingSelect" aria-label="Группировка">
+              <option value="day">Группировать по дням</option>
+              <option value="year_month">Группировать по месяцам</option>
+            </select>
+          </div>
+        </section>
+
+        <!-- Активный фильтр по категории (сбрасывается крестиком) -->
+        <section id="categoryTotals" class="active-filter-row"></section>
+
+        <ul id="transactionList" class="transaction-list"></ul>
+        <p id="emptyState" class="empty-state">Пока пусто. Напишите выше, например «кофе 180», или нажмите «+».</p>
       </section>
     </main>
 
@@ -338,130 +293,9 @@
       </details>
     </main>
 
-    <!-- ================= ВКЛАДКА 3: ТРАНЗАКЦИИ ================= -->
-    <main id="listSection" class="page-section" hidden>
-      <section class="section-head">
-        <div class="tx-type-switcher">
-          <button class="tab-btn active" type="button" data-tab="all">Все</button>
-          <button class="tab-btn" type="button" data-tab="expense">Расходы</button>
-          <button class="tab-btn" type="button" data-tab="income">Доходы</button>
-        </div>
-        <h2 id="tabTitle" class="sr-only-compat">Транзакции</h2>
-        <div class="section-actions">
-          <button id="manageCategories" class="ghost sm" type="button">Категории</button>
-          <button id="addTransaction" class="primary sm" type="button">+ Запись</button>
-        </div>
-      </section>
-
-      <!-- Сворачиваемые фильтры -->
-      <section id="toolbarSection" class="toolbar">
-        <div class="search-row">
-          <input id="searchInput" type="search" placeholder="Поиск по комментариям и категориям">
-          <button id="resetFiltersBtn" class="icon-btn" type="button" aria-label="Сбросить фильтры" title="Сбросить фильтры">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/>
-            </svg>
-          </button>
-        </div>
-        <div class="row">
-          <select id="categoryFilter"></select>
-          <select id="sortSelect">
-            <option value="date_desc">Новые сначала</option>
-            <option value="date_asc">Старые сначала</option>
-            <option value="amount_desc">Сумма: больше</option>
-            <option value="amount_asc">Сумма: меньше</option>
-            <option value="category_asc">Категория А-Я</option>
-          </select>
-        </div>
-        <div class="row">
-          <input id="dateFrom" type="date" aria-label="Дата от">
-          <input id="dateTo" type="date" aria-label="Дата до">
-        </div>
-        <div class="row">
-          <input id="amountMin" type="number" min="0" step="0.01" placeholder="Сумма от">
-          <input id="amountMax" type="number" min="0" step="0.01" placeholder="Сумма до">
-        </div>
-      </section>
-
-      <!-- Чипы сумм по категориям -->
-      <section id="categoryTotals" class="category-totals"></section>
-
-      <!-- Список транзакций -->
-      <ul id="transactionList" class="transaction-list"></ul>
-      <p id="emptyState" class="empty-state">Пока пусто. Нажмите «+», чтобы добавить запись.</p>
-    </main>
-
-    <!-- ================= ВКЛАДКА 4: СЧЕТА ================= -->
-    <main id="accountsSection" class="page-section accounts-page" hidden>
-      <div class="net-worth-block">
-        <span class="net-worth-label hl-pink">ЧИСТАЯ СТОИМОСТЬ</span>
-        <div id="accountsNetWorthVal" class="net-worth-amount">0,00 ₽</div>
-      </div>
-
-      <div id="accountsListContainer" class="accounts-list"></div>
-
-      <div class="accounts-actions">
-        <button id="transferBalanceBtn" class="pill-outline-btn" type="button">ПЕРЕВЕСТИ МЕЖДУ СЧЕТАМИ</button>
-        <button id="createNewAccountBtn" class="pill-pink-btn" type="button">СОЗДАТЬ НОВЫЙ СЧЕТ</button>
-        <button id="accountsAdjustBalanceBtn" class="text-link-btn center-link" type="button">Корректировать общий баланс</button>
-      </div>
-    </main>
-
-    <!-- ================= ВКЛАДКА 5: РУКОВОДСТВО И ИНСТРУМЕНТЫ ================= -->
-    <main id="guideSection" class="page-section guide-page" hidden>
-      <h2 class="script-heading">Инструменты</h2>
-      <p class="guide-subtitle">Быстрый доступ к умным функциям, ИИ-ассистенту, шаблонам и резервным копиям.</p>
-
-      <div class="guide-cards-grid">
-        <div class="guide-card">
-          <div class="guide-card-head">
-            <span class="guide-card-icon" style="background:#F7A8C4">🤖</span>
-            <div>
-              <h3>ИИ-ассистент и Голосовой ввод</h3>
-              <p>Добавляйте операции голосом или текстом в свободной форме, загружайте банковские выписки и получайте разбор бюджета.</p>
-            </div>
-          </div>
-          <div class="guide-card-actions">
-            <button id="guideQuickAiBtn" class="pill-pink-btn sm" type="button">✨ Добавить с ИИ / Голосом</button>
-            <button id="guideSmartImportBtn" class="pill-outline-btn sm" type="button">📄 Умный импорт выписки</button>
-          </div>
-        </div>
-
-        <div class="guide-card">
-          <div class="guide-card-head">
-            <span class="guide-card-icon" style="background:#F5BD7A">🗂️</span>
-            <div>
-              <h3>Категории и Демо-данные</h3>
-              <p>Создавайте собственные категории с любыми цветами и иконками, тестируйте графики на демо-данных.</p>
-            </div>
-          </div>
-          <div class="guide-card-actions">
-            <button id="guideCategoriesBtn" class="pill-outline-btn sm" type="button">Настроить категории</button>
-            <button id="guideDemoDataBtn" class="pill-outline-btn sm" type="button">🪄 Загрузить демо-данные</button>
-          </div>
-        </div>
-
-        <div class="guide-card">
-          <div class="guide-card-head">
-            <span class="guide-card-icon" style="background:#67C992">☁️</span>
-            <div>
-              <h3>Облако Supabase и CSV</h3>
-              <p>Синхронизируйте кошелёк между устройствами через бесплатную БД Supabase или сохраняйте копии в CSV.</p>
-            </div>
-          </div>
-          <div class="guide-card-actions">
-            <button id="guideSettingsBtn" class="pill-pink-btn sm" type="button">⚙️ Открыть все настройки</button>
-            <button id="guideExportCsvBtn" class="pill-outline-btn sm" type="button">📥 Экспорт CSV</button>
-          </div>
-        </div>
-      </div>
-    </main>
-
-    <!-- ================= ПЛАВАЮЩИЕ КНОПКИ СПРАВА ВНИЗУ ================= -->
+    <!-- ================= ПЛАВАЮЩАЯ КНОПКА «+» ================= -->
     <div id="floatingActionsWrap" class="floating-actions">
-      
-
-      <button id="fabPlusBtn" class="fab-watercolor-plus" type="button" title="Новая транзакция" aria-label="Новая транзакция">
+      <button id="fabPlusBtn" class="fab-watercolor-plus" type="button" title="Новая запись" aria-label="Новая запись">
         <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2.2" stroke-linecap="round">
           <line x1="12" y1="5" x2="12" y2="19"></line>
           <line x1="5" y1="12" x2="19" y2="12"></line>
@@ -469,61 +303,19 @@
       </button>
     </div>
 
-    <!-- ================= НИЖНЯЯ НАВИГАЦИЯ (5 ВКЛАДОК) ================= -->
+    <!-- ================= НИЖНЯЯ НАВИГАЦИЯ (3 ВКЛАДКИ) ================= -->
     <nav class="bottom-nav" aria-label="Основная навигация">
-      <button class="nav-item active" type="button" data-nav="home">
-        <svg class="nav-icon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
-          <circle cx="12" cy="6.5" r="2.6"/>
-          <circle cx="12" cy="17.5" r="2.6"/>
-          <circle cx="6.5" cy="12" r="2.6"/>
-          <circle cx="17.5" cy="12" r="2.6"/>
-          <circle cx="8.1" cy="8.1" r="2.6"/>
-          <circle cx="15.9" cy="15.9" r="2.6"/>
-          <circle cx="15.9" cy="8.1" r="2.6"/>
-          <circle cx="8.1" cy="15.9" r="2.6"/>
-          <circle cx="12" cy="12" r="2.2" fill="var(--bg)"/>
-        </svg>
-        <span>Домой</span>
+      <button class="nav-item active" type="button" data-nav="expense">
+        <svg class="nav-icon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="20" r="1.5"></circle><circle cx="18" cy="20" r="1.5"></circle><path d="M2 3h3l2.4 11.5a2 2 0 0 0 2 1.5h8.6a2 2 0 0 0 2-1.5L22 7H6"></path></svg>
+        <span>Расходы</span>
       </button>
-
+      <button class="nav-item" type="button" data-nav="income">
+        <svg class="nav-icon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="M15 9.2c-.5-1-1.6-1.6-3-1.6-1.7 0-3 .9-3 2.2 0 3 6 1.6 6 4.5 0 1.3-1.3 2.2-3 2.2-1.5 0-2.6-.6-3.1-1.7"></path><line x1="12" y1="6" x2="12" y2="7.6"></line><line x1="12" y1="16.5" x2="12" y2="18"></line></svg>
+        <span>Доходы</span>
+      </button>
       <button class="nav-item" type="button" data-nav="analytics">
-        <svg class="nav-icon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
-          <path d="M12 3a9 9 0 0 1 8.66 6.5"/>
-          <path d="M20.66 14.5A9 9 0 0 1 6 18.7"/>
-          <path d="M3.5 14A9 9 0 0 1 9.5 3.4"/>
-        </svg>
+        <svg class="nav-icon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 3a9 9 0 0 1 8.66 6.5"/><path d="M20.66 14.5A9 9 0 0 1 6 18.7"/><path d="M3.5 14A9 9 0 0 1 9.5 3.4"/></svg>
         <span>Аналитика</span>
-      </button>
-
-      <button class="nav-item" type="button" data-nav="transactions">
-        <svg class="nav-icon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M6 3l2 1.5L10 3l2 1.5L14 3l2 1.5L18 3v18l-2-1.5L14 21l-2-1.5L10 21l-2-1.5L6 21V3z"/>
-          <line x1="9" y1="9" x2="15" y2="9"/>
-          <line x1="9" y1="13" x2="15" y2="13"/>
-          <line x1="9" y1="17" x2="12" y2="17"/>
-        </svg>
-        <span>Транзакции</span>
-      </button>
-
-      <button class="nav-item" type="button" data-nav="accounts">
-        <svg class="nav-icon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M3 10l9-6 9 6H3z"/>
-          <line x1="6" y1="10" x2="6" y2="17"/>
-          <line x1="10" y1="10" x2="10" y2="17"/>
-          <line x1="14" y1="10" x2="14" y2="17"/>
-          <line x1="18" y1="10" x2="18" y2="17"/>
-          <line x1="3" y1="20" x2="21" y2="20"/>
-        </svg>
-        <span>Счета</span>
-      </button>
-
-      <button class="nav-item" type="button" data-nav="guide">
-        <svg class="nav-icon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M22 10L12 5 2 10l10 5 10-5z"/>
-          <path d="M6 12.5V17c0 1.7 2.7 3 6 3s6-1.3 6-3v-4.5"/>
-          <line x1="22" y1="10" x2="22" y2="16"/>
-        </svg>
-        <span>Ещё</span>
       </button>
     </nav>
   </div>
@@ -605,10 +397,7 @@
 
         <!-- Заметка (однострочный input с enterkeyhint="done", не вызывает зум и скрывает цифровую панель при наборе текста) -->
         <div class="tx-field-row comment-row">
-          <span class="tx-field-label">Заметка</span>
-          <div class="tx-field-control comment-control">
-            <input id="txComment" type="text" enterkeyhint="done" autocomplete="off" placeholder="Комментарий (необязательно)...">
-          </div>
+          <textarea id="txComment" rows="1" enterkeyhint="done" autocomplete="off" placeholder="Комментарий (необязательно)…" aria-label="Комментарий"></textarea>
         </div>
 
         <button type="button" id="txMoreToggleBtn" class="tx-more-toggle" aria-expanded="false">
@@ -686,6 +475,7 @@
         </div>
         <div class="tx-keypad-bottom-actions">
           <button type="button" id="deleteTxInModalBtn" class="tx-modal-del-btn" hidden>Удалить</button>
+          <button type="button" id="txSaveTemplateBtn" class="tx-modal-tpl-btn" title="Сохранить как быстрый шаблон" aria-label="В быстрые шаблоны" hidden>⭐</button>
           <button type="submit" id="bottomSaveTxBtn" class="tx-modal-submit-btn">✓ Сохранить запись</button>
         </div>
       </div>
@@ -695,8 +485,8 @@
   <!-- ================= ДИАЛОГ КОРРЕКТИРОВКИ БАЛАНСА (БЕЗ СИСТЕМНОГО PROMPT) ================= -->
   <dialog id="adjustBalanceDialog" class="modal">
     <form id="adjustBalanceForm" class="modal-content">
-      <h3>Корректировка баланса</h3>
-      <p id="adjustBalanceHint" class="modal-desc">Укажите фактическую сумму вашего общего баланса (₽). Приложение автоматически рассчитает корректировку.</p>
+      <h3>Точный баланс сейчас</h3>
+      <p id="adjustBalanceHint" class="modal-desc">Сколько денег у вас сейчас на самом деле? Стартовый баланс пересчитается автоматически.</p>
       <label>Фактический баланс (₽)
         <input id="adjustBalanceInput" type="number" step="0.01" required placeholder="0,00">
       </label>
@@ -766,53 +556,61 @@
 
   <!-- ================= ДИАЛОГ НАСТРОЕК ================= -->
   <dialog id="settingsDialog" class="modal">
-    <div class="modal-content wide">
-      <h3>Настройки</h3>
+    <div class="modal-content wide settings-sheet">
+      <div class="settings-head">
+        <h3>Настройки</h3>
+        <button type="button" id="closeSettingsX" class="tx-sheet-close" aria-label="Закрыть">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+        </button>
+      </div>
 
+      <!-- Баланс -->
       <div class="settings-section">
-        <p class="settings-label">Внешний вид</p>
+        <p class="settings-label">Баланс</p>
+        <div class="settings-balance-now">
+          <span>Сейчас на руках</span>
+          <strong id="settingsCurrentBalance">0,00 ₽</strong>
+        </div>
+        <label class="settings-inline-label" for="startBalanceInput">Стартовый баланс, ₽</label>
+        <div class="api-key-row">
+          <input id="startBalanceInput" type="number" step="0.01" inputmode="decimal" placeholder="0">
+          <button type="button" id="saveStartBalanceBtn" class="primary">Сохранить</button>
+        </div>
+        <p class="settings-hint">Сумма, с которой вы начали учёт. Баланс = стартовый + доходы − расходы.</p>
+        <button type="button" id="settingsAdjustBalanceBtn" class="text-link-btn settings-link">Знаю точный баланс сейчас — пересчитать ›</button>
+      </div>
+
+      <!-- Счета -->
+      <div class="settings-section">
+        <div class="settings-row">
+          <p class="settings-label" style="margin:0;">Счета</p>
+          <span id="accountsNetWorthVal" class="settings-muted-val">0,00 ₽</span>
+        </div>
+        <div id="accountsListContainer" class="accounts-list compact"></div>
+        <div class="row settings-two-btns">
+          <button id="createNewAccountBtn" class="ghost" type="button">+ Новый счёт</button>
+          <button id="transferBalanceBtn" class="ghost" type="button">⇄ Перевод</button>
+        </div>
+      </div>
+
+      <!-- Категории и внешний вид -->
+      <div class="settings-section">
+        <button id="settingsCategoriesBtn" class="settings-action-btn" type="button">
+          <span class="settings-action-icon">🗂️</span>
+          <span>Категории расходов и доходов</span>
+        </button>
         <div class="settings-row">
           <span>Тёмная тема</span>
           <button id="themeToggle" class="toggle-btn" type="button" role="switch" aria-checked="false"></button>
         </div>
       </div>
 
-      <div class="settings-section">
-        <p class="settings-label">Данные и Шаблоны</p>
-        <div class="settings-row" style="gap: 8px; margin-bottom: 8px;">
-          <button id="exportCsvBtn" class="settings-action-btn" type="button" style="flex: 1;">
-            <span class="settings-action-icon">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
-            </span>
-            <span>Экспорт CSV</span>
-          </button>
-          <button id="importCsvBtn" class="settings-action-btn" type="button" style="flex: 1;">
-            <span class="settings-action-icon">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
-            </span>
-            <span>Импорт CSV</span>
-          </button>
-          <input id="importCsvInput" type="file" accept=".csv" style="display:none">
-        </div>
-        <button id="loadRefDataBtn" class="settings-action-btn" type="button" style="margin-bottom: 8px;">
-          <span class="settings-action-icon">🌸</span>
-          <span>Загрузить стартовый пример (3 записи)</span>
-        </button>
-        <button id="loadDemoDataBtn" class="settings-action-btn" type="button" style="margin-bottom: 8px;">
-          <span class="settings-action-icon">✨</span>
-          <span>Заполнить демо-данными (50 записей)</span>
-        </button>
-        <button id="aiImportBtn" class="settings-action-btn" type="button">
-          <span class="settings-action-icon">🪄</span>
-          <span>Умный импорт с ИИ (CSV / Excel / TXT)</span>
-        </button>
-      </div>
-
-      <div class="settings-section">
-        <div class="settings-row" style="margin-bottom: 10px;">
-          <p class="settings-label" style="margin-bottom: 0;">Интеграция ИИ</p>
+      <!-- ИИ -->
+      <details class="settings-group">
+        <summary>
+          <span>✨ Добавление через ИИ</span>
           <span id="aiSavedStatusBadge" class="ai-saved-badge">Ключ не задан</span>
-        </div>
+        </summary>
         <div class="settings-form-stack">
           <label>Провайдер ИИ
             <select id="aiProvider">
@@ -862,57 +660,87 @@
             2. Модель: <code>gpt-4o-mini</code>.</p>
           </div>
         </div>
-      </div>
+      </details>
 
-      <div class="settings-section">
-        <p class="settings-label">Синхронизация и облако</p>
-        <div id="cloudUserStatus" class="cloud-status-box">
-          <span>Режим: <strong>Локальный кошелёк (Offline)</strong></span>
+      <!-- Данные -->
+      <details class="settings-group">
+        <summary><span>📦 Данные: импорт, экспорт, примеры</span></summary>
+        <div class="settings-form-stack">
+          <button id="aiImportBtn" class="settings-action-btn" type="button">
+            <span class="settings-action-icon">🪄</span>
+            <span>Умный импорт выписки с ИИ (CSV / Excel / TXT)</span>
+          </button>
+          <div class="row settings-two-btns">
+            <button id="exportCsvBtn" class="settings-action-btn" type="button">
+              <span class="settings-action-icon">⬆️</span><span>Экспорт CSV</span>
+            </button>
+            <button id="importCsvBtn" class="settings-action-btn" type="button">
+              <span class="settings-action-icon">⬇️</span><span>Импорт CSV</span>
+            </button>
+            <input id="importCsvInput" type="file" accept=".csv" style="display:none">
+          </div>
+          <button id="loadRefDataBtn" class="settings-action-btn" type="button">
+            <span class="settings-action-icon">🌸</span>
+            <span>Загрузить стартовый пример (3 записи)</span>
+          </button>
+          <button id="loadDemoDataBtn" class="settings-action-btn" type="button">
+            <span class="settings-action-icon">✨</span>
+            <span>Заполнить демо-данными (50 записей)</span>
+          </button>
         </div>
-        <div id="cloudConfigBlock" class="cloud-config-box">
-          <div id="dbAuthFormBlock" class="settings-form-stack">
-            <label>Email / Почта
-              <input id="supabaseEmailInput" type="email" placeholder="email@example.com">
-            </label>
-            <label>Пароль
-              <input id="supabasePasswordInput" type="password" placeholder="••••••••">
-            </label>
-            <details class="db-details">
-              <summary id="dbSettingsSummary">⚙️ Параметры подключения к БД (Supabase)</summary>
-              <div class="settings-form-stack" style="margin-top: 8px;">
-                <label>Supabase URL
-                  <input id="supabaseUrlInput" type="url" placeholder="https://your-project.supabase.co">
-                </label>
-                <label>Supabase Anon Key
-                  <input id="supabaseKeyInput" type="password" placeholder="your-anon-key">
-                </label>
+      </details>
+
+      <!-- Облако -->
+      <details class="settings-group">
+        <summary><span>☁️ Синхронизация и облако</span></summary>
+        <div class="settings-form-stack">
+          <div id="cloudUserStatus" class="cloud-status-box">
+            <span>Режим: <strong>Локальный кошелёк (Offline)</strong></span>
+          </div>
+          <div id="cloudConfigBlock" class="cloud-config-box">
+            <div id="dbAuthFormBlock" class="settings-form-stack">
+              <label>Email / Почта
+                <input id="supabaseEmailInput" type="email" placeholder="email@example.com">
+              </label>
+              <label>Пароль
+                <input id="supabasePasswordInput" type="password" placeholder="••••••••">
+              </label>
+              <details class="db-details">
+                <summary id="dbSettingsSummary">⚙️ Параметры подключения к БД (Supabase)</summary>
+                <div class="settings-form-stack" style="margin-top: 8px;">
+                  <label>Supabase URL
+                    <input id="supabaseUrlInput" type="url" placeholder="https://your-project.supabase.co">
+                  </label>
+                  <label>Supabase Anon Key
+                    <input id="supabaseKeyInput" type="password" placeholder="your-anon-key">
+                  </label>
+                </div>
+              </details>
+              <div class="row" style="gap: 8px; margin-top: 6px;">
+                <button type="button" id="supabaseLoginBtn" class="primary" style="flex: 1;">Войти</button>
+                <button type="button" id="supabaseRegisterBtn" class="ghost" style="flex: 1;">Регистрация</button>
               </div>
-            </details>
-            <div class="row" style="gap: 8px; margin-top: 6px;">
-              <button type="button" id="supabaseLoginBtn" class="primary" style="flex: 1;">Войти</button>
-              <button type="button" id="supabaseRegisterBtn" class="ghost" style="flex: 1;">Регистрация</button>
             </div>
-          </div>
 
-          <div id="dbLoggedInBlock" class="settings-form-stack" style="display: none;">
-            <div class="cloud-active-label">☁️ Активная синхронизация</div>
-            <div class="cloud-email-card">
-              <span>Вы вошли как:</span>
-              <strong id="supabaseUserEmailDisplay">user@mail.com</strong>
+            <div id="dbLoggedInBlock" class="settings-form-stack" style="display: none;">
+              <div class="cloud-active-label">☁️ Активная синхронизация</div>
+              <div class="cloud-email-card">
+                <span>Вы вошли как:</span>
+                <strong id="supabaseUserEmailDisplay">user@mail.com</strong>
+              </div>
+              <div class="row" style="gap: 8px;">
+                <button type="button" id="supabaseLogoutBtn" class="ghost danger-outline" style="flex: 1;">Выйти</button>
+                <button type="button" id="fullDisconnectBtn" class="ghost" style="flex: 1;">Отключить всё</button>
+              </div>
             </div>
-            <div class="row" style="gap: 8px;">
-              <button type="button" id="supabaseLogoutBtn" class="ghost danger-outline" style="flex: 1;">Выйти</button>
-              <button type="button" id="fullDisconnectBtn" class="ghost" style="flex: 1;">Отключить всё</button>
-            </div>
-          </div>
 
-          <button type="button" id="toggleCloudInstructionBtn" class="ghost full-w-btn" style="margin-top: 8px;">📖 Инструкция по созданию своей БД Supabase</button>
-          <div id="cloudInstructionBlock" class="instruction-box" style="display: none;">
-            <p><strong>Как создать свою БД бесплатно за 5 минут:</strong></p>
-            <p>1. Зарегистрируйтесь на <a href="https://supabase.com" target="_blank" rel="noopener">supabase.com</a>.</p>
-            <p>2. Создайте проект, откройте <strong>SQL Editor → New Query</strong>, вставьте скрипт ниже и нажмите <strong>Run</strong>.</p>
-            <p>3. Скопируйте <strong>Project URL</strong> и <strong>anon public</strong> из раздела <strong>Settings → API</strong>.</p>
-            <textarea readonly class="sql-script-area" onclick="this.select(); document.execCommand('copy');" title="Нажмите, чтобы скопировать">-- 1. Таблица профилей
+            <button type="button" id="toggleCloudInstructionBtn" class="ghost full-w-btn" style="margin-top: 8px;">📖 Инструкция по созданию своей БД Supabase</button>
+            <div id="cloudInstructionBlock" class="instruction-box" style="display: none;">
+              <p><strong>Как создать свою БД бесплатно за 5 минут:</strong></p>
+              <p>1. Зарегистрируйтесь на <a href="https://supabase.com" target="_blank" rel="noopener">supabase.com</a>.</p>
+              <p>2. Создайте проект, откройте <strong>SQL Editor → New Query</strong>, вставьте скрипт ниже и нажмите <strong>Run</strong>.</p>
+              <p>3. Скопируйте <strong>Project URL</strong> и <strong>anon public</strong> из раздела <strong>Settings → API</strong>.</p>
+              <textarea readonly class="sql-script-area" onclick="this.select(); document.execCommand('copy');" title="Нажмите, чтобы скопировать">-- 1. Таблица профилей
 create table profiles (
   id uuid primary key,
   balance_adjustment numeric default 0,
@@ -963,12 +791,14 @@ alter table categories disable row level security;
 alter table transactions disable row level security;
 alter table templates disable row level security;
 alter table ai_sessions disable row level security;</textarea>
+            </div>
           </div>
         </div>
-      </div>
+      </details>
 
-      <div class="settings-section settings-danger-zone">
-        <p class="settings-label">Опасная зона</p>
+      <!-- Опасная зона -->
+      <details class="settings-group settings-danger-zone">
+        <summary><span>⚠️ Опасная зона</span></summary>
         <div class="settings-form-stack">
           <button id="clearDataBtn" class="settings-action-btn danger" type="button">
             <span class="settings-action-icon">🗑️</span>
@@ -979,10 +809,10 @@ alter table ai_sessions disable row level security;</textarea>
             <span>Удалить данные из облака</span>
           </button>
         </div>
-      </div>
+      </details>
 
       <div class="modal-actions">
-        <button type="button" id="closeSettingsDialog" class="primary full-w-btn">✓ Готово (Сохранить и закрыть)</button>
+        <button type="button" id="closeSettingsDialog" class="primary full-w-btn">Готово</button>
       </div>
     </div>
   </dialog>
