@@ -815,12 +815,25 @@ function loadData() {
     const savedAccounts = JSON.parse(localStorage.getItem(ACCOUNTS_KEY));
     state.accounts = (savedAccounts && savedAccounts.length) ? savedAccounts : [...DEFAULT_ACCOUNTS];
 
-    const savedPromo = localStorage.getItem(PROMO_KEY);
-    state.promoVisible = savedPromo === null ? true : savedPromo === 'true';
+    const savedObj = raw ? JSON.parse(raw) : {};
+    if (!localStorage.getItem(AI_KEY) && savedObj.aiApiKey) {
+      localStorage.setItem(AI_KEY, savedObj.aiApiKey);
+    }
+    state.aiProvider = localStorage.getItem(AI_PROVIDER_KEY) || savedObj.aiProvider || 'google';
+    state.aiApiUrl = localStorage.getItem(AI_URL_KEY) || savedObj.aiApiUrl || '';
+    state.aiModel = localStorage.getItem(AI_MODEL_KEY) || savedObj.aiModel || 'gemini-2.5-flash';
 
-    state.aiProvider = localStorage.getItem(AI_PROVIDER_KEY) || 'google';
-    state.aiApiUrl = localStorage.getItem(AI_URL_KEY) || '';
-    state.aiModel = localStorage.getItem(AI_MODEL_KEY) || 'gemini-3.1-flash-lite';
+    // Синхронизируем поля настроек ИИ в DOM сразу при загрузке
+    const providerEl = document.getElementById('aiProvider');
+    if (providerEl) providerEl.value = state.aiProvider;
+    const urlEl = document.getElementById('aiApiUrl');
+    if (urlEl) urlEl.value = state.aiApiUrl;
+    const modelEl = document.getElementById('aiModel');
+    if (modelEl) modelEl.value = state.aiModel;
+    const keyEl = document.getElementById('aiApiKey');
+    if (keyEl) keyEl.value = localStorage.getItem(AI_KEY) || '';
+    updateAiSettingsStatusUI();
+
     state.aiSessions = JSON.parse(localStorage.getItem('koshelek_ai_sessions')) || [];
     state.currentAiSessionId = null;
     state.syncQueue = JSON.parse(localStorage.getItem('koshelek_sync_queue')) || [];
@@ -836,7 +849,11 @@ function saveData() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify({
     transactions: state.transactions,
     categories: state.categories,
-    balanceAdjustment: state.balanceAdjustment || 0
+    balanceAdjustment: state.balanceAdjustment || 0,
+    aiProvider: state.aiProvider || localStorage.getItem(AI_PROVIDER_KEY) || 'google',
+    aiModel: state.aiModel || localStorage.getItem(AI_MODEL_KEY) || 'gemini-2.5-flash',
+    aiApiUrl: state.aiApiUrl || localStorage.getItem(AI_URL_KEY) || '',
+    aiApiKey: localStorage.getItem(AI_KEY) || ''
   }));
   localStorage.setItem(ACCOUNTS_KEY, JSON.stringify(state.accounts));
 }
@@ -1135,9 +1152,6 @@ function renderBalance() {
 }
 
 function renderHome() {
-  const promoEl = document.getElementById('promoBanner');
-  if (promoEl) promoEl.hidden = !state.promoVisible;
-
   const periodTxs = getPeriodTransactions();
 
   // 1. Блок Доход на Главной
@@ -1153,7 +1167,7 @@ function renderHome() {
     } else {
       incEmpty.hidden = true;
       incList.hidden = false;
-      incList.innerHTML = buildCategorySummaryRowsHTML(incomeTxs, 'income');
+      incList.innerHTML = buildCategorySummaryRowsHTML(incomeTxs, 'income', true);
       bindCategoryRowClicks(incList, 'income');
     }
   }
@@ -1171,13 +1185,13 @@ function renderHome() {
     } else {
       expEmpty.hidden = true;
       expList.hidden = false;
-      expList.innerHTML = buildCategorySummaryRowsHTML(expenseTxs, 'expense');
+      expList.innerHTML = buildCategorySummaryRowsHTML(expenseTxs, 'expense', true);
       bindCategoryRowClicks(expList, 'expense');
     }
   }
 }
 
-function buildCategorySummaryRowsHTML(txs, type) {
+function buildCategorySummaryRowsHTML(txs, type, showQuickAdd = false) {
   const totals = {};
   txs.forEach(tx => {
     totals[tx.categoryId] = (totals[tx.categoryId] || 0) + tx.amount;
@@ -1187,21 +1201,38 @@ function buildCategorySummaryRowsHTML(txs, type) {
   return sorted.map(([catId, sum]) => {
     const cat = getCat(type, catId);
     const title = escapeHtml(cleanCatTitle(cat.name));
+    const quickBtnHtml = showQuickAdd
+      ? `<button type="button" class="cat-row-quick-add" data-quick-cat="${escapeHtml(catId)}" data-quick-type="${type}" title="Быстро добавить в «${title}»" aria-label="Добавить в ${title}">+</button>`
+      : '';
     return `<li class="ref-cat-row" data-cat-id="${escapeHtml(catId)}" data-type="${type}">
       <div class="ref-cat-left">
         ${renderCatBadgeHTML(cat)}
         <span class="ref-cat-name">${title}</span>
       </div>
-      <span class="ref-cat-amount">${fmt(sum)}</span>
+      <div class="ref-cat-right">
+        <span class="ref-cat-amount">${fmt(sum)}</span>
+        ${quickBtnHtml}
+      </div>
     </li>`;
   }).join('');
 }
 
 function bindCategoryRowClicks(container, type) {
+  container.querySelectorAll('.cat-row-quick-add').forEach(btn => {
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      openAddDialog(btn.dataset.quickType, btn.dataset.quickCat);
+    });
+  });
+
   container.querySelectorAll('.ref-cat-row').forEach(row => {
-    row.addEventListener('click', () => {
+    row.addEventListener('click', e => {
+      if (e.target.closest('.cat-row-quick-add')) return;
       state.activeTab = type;
       state.filters.category = row.dataset.catId;
+      document.querySelectorAll('.tx-type-switcher .tab-btn').forEach(b => {
+        b.classList.toggle('active', b.dataset.tab === type);
+      });
       switchNavTab('transactions');
     });
   });
@@ -1492,7 +1523,43 @@ function renderTxCategorySelect() {
   if (!sel) return;
   const mode = state.txModalMode === 'income' ? 'income' : 'expense';
   const cats = state.categories[mode] || [];
+  const prevVal = sel.value;
   sel.innerHTML = cats.map(c => `<option value="${escapeHtml(c.id)}">${escapeHtml(cleanCatTitle(c.name))}</option>`).join('');
+  if (prevVal && cats.some(c => c.id === prevVal)) {
+    sel.value = prevVal;
+  }
+  renderTxQuickCategoryBar();
+}
+
+function renderTxQuickCategoryBar() {
+  const bar = document.getElementById('txQuickCategoryBar');
+  const sel = document.getElementById('txCategory');
+  if (!bar || !sel) return;
+
+  if (state.txModalMode === 'transfer') {
+    bar.hidden = true;
+    return;
+  }
+
+  bar.hidden = false;
+  const mode = state.txModalMode === 'income' ? 'income' : 'expense';
+  const cats = state.categories[mode] || [];
+  const activeId = sel.value || cats[0]?.id;
+
+  bar.innerHTML = cats.map(c => {
+    const isActive = c.id === activeId;
+    return `<button type="button" class="tx-quick-cat-pill${isActive ? ' active' : ''}" data-cat-id="${escapeHtml(c.id)}">
+      <span class="tx-quick-cat-dot" style="background:${escapeHtml(c.color || '#F5BD7A')}"></span>
+      <span>${escapeHtml(c.name)}</span>
+    </button>`;
+  }).join('');
+
+  bar.querySelectorAll('.tx-quick-cat-pill').forEach(btn => {
+    btn.addEventListener('click', () => {
+      sel.value = btn.dataset.catId;
+      bar.querySelectorAll('.tx-quick-cat-pill').forEach(b => b.classList.toggle('active', b === btn));
+    });
+  });
 }
 
 function renderAccountSelects() {
@@ -1542,7 +1609,6 @@ function switchNavTab(navName) {
     btn.classList.toggle('active', btn.dataset.nav === navName);
   });
 
-  // Адаптация верхней шапки под активный экран (как на референсах)
   const monthNavBar = document.getElementById('monthNavBar');
   const staticPageTitle = document.getElementById('staticPageTitle');
   const triangleIcon = document.getElementById('topLeftTriangleIcon');
@@ -1563,7 +1629,7 @@ function switchNavTab(navName) {
     if (monthNavBar) monthNavBar.hidden = true;
     if (staticPageTitle) {
       staticPageTitle.hidden = false;
-      staticPageTitle.textContent = 'РУКОВОДСТВО';
+      staticPageTitle.textContent = 'ИНСТРУМЕНТЫ';
     }
     if (floatingWrap) floatingWrap.hidden = false;
   } else {
@@ -1581,7 +1647,7 @@ function switchNavTab(navName) {
   render();
 }
 
-/* ===== МОДАЛЬНОЕ ОКНО ТРАНЗАКЦИИ + ЦИФРОВАЯ КЛАВИАТУРА (РЕФЕРЕНС 3) ===== */
+/* ===== МОДАЛЬНОЕ ОКНО ТРАНЗАКЦИИ + ЦИФРОВАЯ КЛАВИАТУРА ===== */
 function setTxModalMode(mode) {
   state.txModalMode = mode; // 'expense' | 'income' | 'transfer'
   document.querySelectorAll('.tx-mode-pill').forEach(btn => {
@@ -1595,9 +1661,11 @@ function setTxModalMode(mode) {
   const catRow = document.getElementById('txCategoryRow');
   const targetRow = document.getElementById('txTransferTargetRow');
   const accLabel = document.getElementById('txAccountRowLabel');
+  const quickBar = document.getElementById('txQuickCategoryBar');
 
   if (mode === 'transfer') {
     if (catRow) catRow.hidden = true;
+    if (quickBar) quickBar.hidden = true;
     if (targetRow) targetRow.hidden = false;
     if (accLabel) accLabel.textContent = 'Со счета';
   } else {
@@ -1666,7 +1734,6 @@ function handleKeypadPress(key) {
   } else if (key === 'BACKSPACE') {
     cur = cur.slice(0, -1);
   } else if (key === '.') {
-    // Разрешаем точку в текущем числе
     const parts = cur.split(/[+\-*/]/);
     const lastPart = parts[parts.length - 1] || '';
     if (!lastPart.includes('.')) {
@@ -1679,8 +1746,9 @@ function handleKeypadPress(key) {
     } else {
       cur += key;
     }
+  } else if (key === '00') {
+    cur = cur ? cur + '00' : '0';
   } else {
-    // Цифра 0-9
     cur += key;
   }
 
@@ -1688,15 +1756,31 @@ function handleKeypadPress(key) {
   updateTxAmountUI();
 }
 
-function openAddDialog(forcedMode) {
+function openAddDialog(forcedMode, preselectedCategoryId) {
   state.editingId = null;
   const mode = (typeof forcedMode === 'string' && ['expense', 'income', 'transfer'].includes(forcedMode))
     ? forcedMode
     : (state.activeTab === 'income' ? 'income' : 'expense');
 
-  document.getElementById('transactionDialogTitle').textContent = 'НОВАЯ ТРАНЗАКЦИЯ';
+  document.getElementById('transactionDialogTitle').textContent = 'НОВАЯ ЗАПИСЬ';
+  const formEl = document.getElementById('transactionForm');
+  if (formEl) formEl.classList.remove('keyboard-open');
+
+  const delBtn = document.getElementById('deleteTxInModalBtn');
+  if (delBtn) delBtn.hidden = true;
+  const saveBtn = document.getElementById('bottomSaveTxBtn');
+  if (saveBtn) saveBtn.textContent = '✓ Сохранить запись';
+
   renderAccountSelects();
   setTxModalMode(mode);
+
+  if (preselectedCategoryId) {
+    const catEl = document.getElementById('txCategory');
+    if (catEl) {
+      catEl.value = preselectedCategoryId;
+      renderTxQuickCategoryBar();
+    }
+  }
 
   const amtInput = document.getElementById('txAmount');
   if (amtInput) amtInput.value = '';
@@ -1727,6 +1811,14 @@ function openEditDialog(id) {
   if (!tx) return;
   state.editingId = id;
   document.getElementById('transactionDialogTitle').textContent = 'РЕДАКТИРОВАТЬ';
+  const formEl = document.getElementById('transactionForm');
+  if (formEl) formEl.classList.remove('keyboard-open');
+
+  const delBtn = document.getElementById('deleteTxInModalBtn');
+  if (delBtn) delBtn.hidden = false;
+  const saveBtn = document.getElementById('bottomSaveTxBtn');
+  if (saveBtn) saveBtn.textContent = '✓ Сохранить изменения';
+
   renderAccountSelects();
   setTxModalMode(tx.type);
 
@@ -1735,7 +1827,10 @@ function openEditDialog(id) {
   updateTxAmountUI();
 
   const catEl = document.getElementById('txCategory');
-  if (catEl) catEl.value = tx.categoryId;
+  if (catEl) {
+    catEl.value = tx.categoryId;
+    renderTxQuickCategoryBar();
+  }
 
   const dateEl = document.getElementById('txDate');
   if (dateEl) dateEl.value = tx.date;
@@ -1992,12 +2087,6 @@ function updateThemeToggle() {
   const isDark = document.documentElement.dataset.theme === 'dark';
   btn.setAttribute('aria-checked', isDark ? 'true' : 'false');
   btn.classList.toggle('on', isDark);
-
-  const promoBtn = document.getElementById('promoToggleBtn');
-  if (promoBtn) {
-    promoBtn.setAttribute('aria-checked', state.promoVisible ? 'true' : 'false');
-    promoBtn.classList.toggle('on', state.promoVisible);
-  }
 }
 
 /* ===== CSV ЭКСПОРТ И ИМПОРТ ===== */
@@ -2403,19 +2492,83 @@ ${inputText}`;
   }
 }
 
-/* ===== ДИАЛОГ НАСТРОЕК ===== */
+/* ===== ДИАЛОГ НАСТРОЕК И СОХРАНЕНИЕ КЛЮЧА ИИ ===== */
+function updateAiSettingsStatusUI() {
+  const badge = document.getElementById('aiSavedStatusBadge');
+  const keyEl = document.getElementById('aiApiKey');
+  const modelEl = document.getElementById('aiModel');
+  const providerEl = document.getElementById('aiProvider');
+  const chipsWrap = document.getElementById('aiModelPresetChips');
+
+  const keyVal = (keyEl ? keyEl.value : localStorage.getItem(AI_KEY) || '').trim();
+  const modelVal = (modelEl ? modelEl.value : localStorage.getItem(AI_MODEL_KEY) || state.aiModel || 'gemini-2.5-flash').trim();
+  const providerVal = providerEl ? providerEl.value : (localStorage.getItem(AI_PROVIDER_KEY) || state.aiProvider || 'google');
+
+  if (badge) {
+    if (keyVal.length > 5) {
+      badge.textContent = `✓ Сохранено (${modelVal || 'ИИ'})`;
+      badge.classList.add('saved');
+    } else {
+      badge.textContent = 'Ключ не задан';
+      badge.classList.remove('saved');
+    }
+  }
+
+  if (chipsWrap) {
+    chipsWrap.style.display = providerVal === 'google' ? 'flex' : 'none';
+    chipsWrap.querySelectorAll('.ai-model-chip').forEach(chip => {
+      chip.classList.toggle('active', chip.dataset.model === modelVal);
+    });
+  }
+}
+
+function saveAiSettings(showFeedback = false) {
+  const keyEl = document.getElementById('aiApiKey');
+  if (keyEl) {
+    localStorage.setItem(AI_KEY, keyEl.value.trim());
+  }
+  const providerEl = document.getElementById('aiProvider');
+  if (providerEl && providerEl.value) {
+    state.aiProvider = providerEl.value;
+    localStorage.setItem(AI_PROVIDER_KEY, state.aiProvider);
+  }
+  const urlEl = document.getElementById('aiApiUrl');
+  if (urlEl) {
+    state.aiApiUrl = urlEl.value.trim();
+    localStorage.setItem(AI_URL_KEY, state.aiApiUrl);
+  }
+  const modelEl = document.getElementById('aiModel');
+  if (modelEl) {
+    const m = modelEl.value.trim() || (state.aiProvider === 'google' ? 'gemini-2.5-flash' : state.aiProvider === 'openai' ? 'gpt-4o-mini' : 'deepseek-chat');
+    state.aiModel = m;
+    localStorage.setItem(AI_MODEL_KEY, state.aiModel);
+  }
+  saveData();
+  updateAiSettingsStatusUI();
+  if (showFeedback) {
+    const hasKey = (localStorage.getItem(AI_KEY) || '').trim().length > 0;
+    showToast(hasKey ? `✅ Ключ и модель (${state.aiModel}) сохранены!` : 'Настройки ИИ обновлены');
+  }
+}
+
 function openSettingsDialog() {
   updateThemeToggle();
+  state.aiProvider = localStorage.getItem(AI_PROVIDER_KEY) || state.aiProvider || 'google';
+  state.aiApiUrl = localStorage.getItem(AI_URL_KEY) || state.aiApiUrl || '';
+  state.aiModel = localStorage.getItem(AI_MODEL_KEY) || state.aiModel || 'gemini-2.5-flash';
+
   const providerEl = document.getElementById('aiProvider');
-  if (providerEl) providerEl.value = state.aiProvider || 'google';
+  if (providerEl) providerEl.value = state.aiProvider;
   const urlEl = document.getElementById('aiApiUrl');
-  if (urlEl) urlEl.value = state.aiApiUrl || '';
+  if (urlEl) urlEl.value = state.aiApiUrl;
   const modelEl = document.getElementById('aiModel');
-  if (modelEl) modelEl.value = state.aiModel || 'gemini-3.1-flash-lite';
+  if (modelEl) modelEl.value = state.aiModel;
   const keyEl = document.getElementById('aiApiKey');
   if (keyEl) keyEl.value = localStorage.getItem(AI_KEY) || '';
   const urlLabel = document.getElementById('aiApiUrlLabel');
   if (urlLabel) urlLabel.style.display = state.aiProvider === 'custom' ? 'flex' : 'none';
+
+  updateAiSettingsStatusUI();
 
   const supabaseUrlEl = document.getElementById('supabaseUrlInput');
   if (supabaseUrlEl) supabaseUrlEl.value = localStorage.getItem('supabase_url') || '';
@@ -2624,20 +2777,23 @@ function renderDashDonutChart(txs) {
       </path>
     `);
 
-    // Выносная иконка и процент вокруг диаграммы
-    const rad = ((midAngle - 90) * Math.PI) / 180;
-    const bx = ((CX + R_BADGE * Math.cos(rad)) / 340) * 100;
-    const by = ((CY + R_BADGE * Math.sin(rad)) / 340) * 100;
-    const pctRounded = Math.round(pct * 100);
+    // Выносная иконка и процент вокруг диаграммы (только для секторов >= 6%, чтобы не слипались)
+    if (pct >= 0.06) {
+      const R_BADGE_SAFE = 134;
+      const rad = ((midAngle - 90) * Math.PI) / 180;
+      const bx = ((CX + R_BADGE_SAFE * Math.cos(rad)) / 340) * 100;
+      const by = ((CY + R_BADGE_SAFE * Math.sin(rad)) / 340) * 100;
+      const pctRounded = Math.round(pct * 100);
 
-    badges.push(`
-      <div class="donut-outer-badge" style="left:${bx.toFixed(1)}%; top:${by.toFixed(1)}%;">
-        <div class="donut-outer-icon" style="background:${escapeHtml(color)}">
-          ${getCategorySvgIcon(cat.name, cat.iconType)}
+      badges.push(`
+        <div class="donut-outer-badge" style="left:${bx.toFixed(1)}%; top:${by.toFixed(1)}%;">
+          <div class="donut-outer-icon" style="background:${escapeHtml(color)}">
+            ${getCategorySvgIcon(cat.name, cat.iconType)}
+          </div>
+          <span class="donut-outer-pct">${pctRounded}%</span>
         </div>
-        <span class="donut-outer-pct">${pctRounded}%</span>
-      </div>
-    `);
+      `);
+    }
   });
 
   stage.innerHTML = `
@@ -2647,6 +2803,14 @@ function renderDashDonutChart(txs) {
     </svg>
     ${badges.join('')}
   `;
+
+  stage.querySelectorAll('.donut-slice-path').forEach(slice => {
+    slice.addEventListener('click', () => {
+      state.activeTab = targetType;
+      state.filters.category = slice.dataset.cat;
+      switchNavTab('transactions');
+    });
+  });
 
   if (catListEl) {
     catListEl.innerHTML = buildCategorySummaryRowsHTML(filteredTxs, targetType);
@@ -2857,24 +3021,49 @@ function renderAiMessages() {
 }
 
 async function callAI(history) {
-  const apiKey = localStorage.getItem(AI_KEY) || '';
-  const provider = state.aiProvider || 'google';
-  const model = state.aiModel || 'gemini-3.1-flash-lite';
-  const customUrl = state.aiApiUrl || '';
+  const domKey = document.getElementById('aiApiKey')?.value.trim();
+  if (domKey) {
+    saveAiSettings(false);
+  }
+  const apiKey = (localStorage.getItem(AI_KEY) || domKey || '').trim();
+  const provider = localStorage.getItem(AI_PROVIDER_KEY) || state.aiProvider || 'google';
+  let model = (localStorage.getItem(AI_MODEL_KEY) || state.aiModel || 'gemini-2.5-flash').trim();
+  const customUrl = (localStorage.getItem(AI_URL_KEY) || state.aiApiUrl || '').trim();
   if (!apiKey) throw new Error('KEY_MISSING');
 
   if (provider === 'google') {
-    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ contents: history })
-    });
-    if (!res.ok) throw new Error('API_ERROR');
-    const data = await res.json();
-    if (data.candidates?.[0]?.content?.parts?.[0]?.text) {
-      return data.candidates[0].content.parts[0].text;
+    const modelsToTry = [model];
+    if (model === 'gemini-3.1-flash-lite') {
+      modelsToTry.push('gemini-3.1-flash-lite-preview', 'gemini-2.5-flash');
+    } else if (!modelsToTry.includes('gemini-2.5-flash')) {
+      modelsToTry.push('gemini-2.5-flash');
     }
-    throw new Error('BAD_RESPONSE');
+
+    let lastErr = null;
+    for (const m of modelsToTry) {
+      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(m)}:generateContent?key=${encodeURIComponent(apiKey)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ contents: history })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.candidates?.[0]?.content?.parts?.[0]?.text) {
+          return data.candidates[0].content.parts[0].text;
+        }
+        throw new Error('BAD_RESPONSE');
+      }
+      if (res.status !== 404) {
+        let errText = 'API_ERROR';
+        try {
+          const errJson = await res.json();
+          errText = errJson?.error?.message || `HTTP ${res.status}`;
+        } catch {}
+        throw new Error(errText);
+      }
+      lastErr = new Error(`Модель ${m} не найдена (404)`);
+    }
+    throw lastErr || new Error('API_ERROR');
   } else {
     let baseUrl = 'https://api.openai.com/v1';
     if (provider === 'custom' && customUrl) baseUrl = customUrl.replace(/\/+$/, '');
@@ -2895,7 +3084,7 @@ async function callAI(history) {
 }
 
 async function sendAiMessage() {
-  const apiKey = localStorage.getItem(AI_KEY) || '';
+  const apiKey = (localStorage.getItem(AI_KEY) || document.getElementById('aiApiKey')?.value || '').trim();
   if (!apiKey) {
     showToast('Сначала укажите API Key в Настройках!');
     openSettingsDialog();
@@ -2924,17 +3113,17 @@ async function sendAiMessage() {
     state.aiChatHistory.push({ role: 'model', parts: [{ text }] });
     renderAiMessages();
     saveAiSession();
-  } catch {
+  } catch (err) {
     loader.remove();
     const errorMsg = document.createElement('div');
     errorMsg.className = 'ai-message model';
-    errorMsg.textContent = '❌ Ошибка API или сети. Проверьте настройки ИИ.';
+    errorMsg.textContent = `❌ Ошибка API: ${err?.message || 'Проверьте настройки ИИ и ключ'}`;
     container.appendChild(errorMsg);
   }
 }
 
 async function startAiReport() {
-  const apiKey = localStorage.getItem(AI_KEY) || '';
+  const apiKey = (localStorage.getItem(AI_KEY) || document.getElementById('aiApiKey')?.value || '').trim();
   if (!apiKey) {
     showToast('Сначала укажите API Key в Настройках!');
     openSettingsDialog();
@@ -2968,8 +3157,8 @@ async function startAiReport() {
     state.aiChatHistory.push({ role: 'model', parts: [{ text }] });
     renderAiMessages();
     saveAiSession();
-  } catch {
-    container.innerHTML = '<div class="ai-message model">❌ Не удалось связаться с ИИ. Проверьте API-ключ.</div>';
+  } catch (err) {
+    container.innerHTML = `<div class="ai-message model">❌ Не удалось связаться с ИИ: ${escapeHtml(err?.message || 'Проверьте API-ключ.')}</div>`;
   }
 }
 
@@ -3093,6 +3282,18 @@ function promptBalanceAdjustment() {
   const currentAdj = state.balanceAdjustment || 0;
   const currentReal = calculated + currentAdj;
 
+  const dialog = document.getElementById('adjustBalanceDialog');
+  const inputEl = document.getElementById('adjustBalanceInput');
+  const infoEl = document.getElementById('adjustBalanceCalcInfo');
+  if (dialog && inputEl) {
+    if (infoEl) {
+      infoEl.textContent = `Расчётный: ${fmt(calculated)} · Корректировка: ${fmt(currentAdj)} · Текущий: ${fmt(currentReal)}`;
+    }
+    inputEl.value = String(Math.round(currentReal * 100) / 100);
+    dialog.showModal();
+    return;
+  }
+
   const input = prompt(
     `Введите фактическую сумму баланса (₽):\n\nРасчётный баланс: ${fmt(calculated)}\nТекущая корректировка: ${fmt(currentAdj)}\nОтображаемый баланс: ${fmt(currentReal)}`,
     String(Math.round(currentReal * 100) / 100)
@@ -3112,6 +3313,7 @@ function promptBalanceAdjustment() {
 
 function bindBalanceToggle() {
   const btn = document.getElementById('balanceToggle');
+  const detailsBtn = document.getElementById('homeBalanceDetailsBtn');
   const summaryCols = document.getElementById('homeSummaryCols');
   const panel = document.getElementById('balancePanel');
   if (!panel) return;
@@ -3122,13 +3324,39 @@ function bindBalanceToggle() {
   };
 
   if (btn) btn.addEventListener('click', togglePanel);
+  if (detailsBtn) detailsBtn.addEventListener('click', togglePanel);
   if (summaryCols) summaryCols.addEventListener('click', togglePanel);
+}
+
+/* Блокировка любого случайного зума на мобильных устройствах (iOS Safari / Android Chrome) */
+function preventMobileZoom() {
+  ['gesturestart', 'gesturechange', 'gestureend'].forEach(evt => {
+    document.addEventListener(evt, e => e.preventDefault(), { passive: false });
+  });
+  let lastTouchEnd = 0;
+  document.addEventListener('touchend', e => {
+    const now = Date.now();
+    if (now - lastTouchEnd <= 280) {
+      e.preventDefault();
+    }
+    lastTouchEnd = now;
+  }, { passive: false });
+  document.addEventListener('dblclick', e => {
+    e.preventDefault();
+  }, { passive: false });
 }
 
 function bindEvents() {
   // 1. Нижняя навигация (5 вкладок по референсу)
   document.querySelectorAll('.nav-item').forEach(btn => {
-    btn.addEventListener('click', () => switchNavTab(btn.dataset.nav));
+    btn.addEventListener('click', () => {
+      if (btn.dataset.nav === 'transactions') {
+        state.filters.category = 'all';
+        const catFilter = document.getElementById('categoryFilter');
+        if (catFilter) catFilter.value = 'all';
+      }
+      switchNavTab(btn.dataset.nav);
+    });
   });
 
   // 2. Переключение месяцев в верхней шапке (< НОЯБРЬ 2026 Г. >)
@@ -3140,7 +3368,7 @@ function bindEvents() {
     showToast(state.periodScope === 'all' ? 'Показаны операции за все периоды' : 'Показаны операции за выбранный месяц');
   });
 
-  // 3. Верхняя левая кнопка (на Главной — быстрые действия/облако; на Транзакциях — смена группировки День / Год-Месяц)
+  // 3. Верхняя левая кнопка (на Главной — быстрые действия; на Транзакциях — смена группировки День / Год-Месяц)
   safeBind('topLeftActionBtn', 'click', () => {
     if (state.activeNav === 'transactions') {
       state.txGroupingMode = state.txGroupingMode === 'day' ? 'year_month' : 'day';
@@ -3151,28 +3379,34 @@ function bindEvents() {
     }
   });
 
-  // 4. Промо-баннер на Главной
-  safeBind('closePromoBannerBtn', 'click', () => {
-    state.promoVisible = false;
-    localStorage.setItem(PROMO_KEY, 'false');
-    renderHome();
-    updateThemeToggle();
-  });
-  safeBind('promoActionBtn', 'click', () => {
-    switchNavTab('guide');
-    showToast('✨ Все умные ИИ-функции уже разблокированы и доступны бесплатно!');
-  });
-  safeBind('promoToggleBtn', 'click', () => {
-    state.promoVisible = !state.promoVisible;
-    localStorage.setItem(PROMO_KEY, String(state.promoVisible));
-    renderHome();
-    updateThemeToggle();
-  });
-
-  // 5. Карточки пустого дохода и расхода на Главной + Категории
+  // 4. Кнопки быстрого добавления и пустые состояния на Главной
+  safeBind('homeAddIncomeBtn', 'click', () => openAddDialog('income'));
+  safeBind('homeAddExpenseBtn', 'click', () => openAddDialog('expense'));
   safeBind('homeIncomeEmpty', 'click', () => openAddDialog('income'));
   safeBind('homeExpenseEmpty', 'click', () => openAddDialog('expense'));
   safeBind('homeManageCategoriesBtn', 'click', () => openCategoryDialog('expense'));
+
+  // 5. Диалог корректировки баланса
+  safeBind('cancelAdjustBalanceBtn', 'click', () => document.getElementById('adjustBalanceDialog')?.close());
+  safeBind('adjustBalanceForm', 'submit', e => {
+    e.preventDefault();
+    const inputEl = document.getElementById('adjustBalanceInput');
+    if (!inputEl) return;
+    const newReal = parseFloat(String(inputEl.value).replace(',', '.').replace(/[^0-9.\-]/g, ''));
+    if (isNaN(newReal)) {
+      showToast('Введите корректное число');
+      return;
+    }
+    const income = state.transactions.filter(t => t.type === 'income').reduce((s, t) => s + t.amount, 0);
+    const expense = state.transactions.filter(t => t.type === 'expense').reduce((s, t) => s + t.amount, 0);
+    const calculated = income - expense;
+    state.balanceAdjustment = newReal - calculated;
+    saveData();
+    render();
+    document.getElementById('adjustBalanceDialog')?.close();
+    syncItem('profiles', 'upsert', { balanceAdjustment: state.balanceAdjustment });
+    showToast('✅ Баланс скорректирован!');
+  });
 
   // 6. Плавающие кнопки справа внизу (Сердечко = ИИ/Голос, Плюс = Новая транзакция)
   safeBind('fabPlusBtn', 'click', () => openAddDialog());
@@ -3214,10 +3448,19 @@ function bindEvents() {
   safeBind('transactionForm', 'submit', saveTransaction);
   safeBind('cancelTransaction', 'click', () => document.getElementById('transactionDialog')?.close());
 
+  safeBind('deleteTxInModalBtn', 'click', () => {
+    if (state.editingId) {
+      const idToDelete = state.editingId;
+      document.getElementById('transactionDialog')?.close();
+      deleteTransaction(idToDelete);
+    }
+  });
+
   document.querySelectorAll('.tx-mode-pill').forEach(btn => {
     btn.addEventListener('click', () => setTxModalMode(btn.dataset.txMode));
   });
 
+  safeBind('txCategory', 'change', () => renderTxQuickCategoryBar());
   safeBind('txDate', 'change', updateTxDateLabel);
   safeBind('txPaidToggleBtn', 'click', () => {
     state.txPaid = !state.txPaid;
@@ -3225,6 +3468,26 @@ function bindEvents() {
   });
   safeBind('txQuickCatManageBtn', 'click', () => {
     openCategoryDialog(state.txModalMode === 'income' ? 'income' : 'expense');
+  });
+
+  // При наборе заметки скрываем кастомную цифровую панель, чтобы экранная клавиатура не наезжала
+  safeBind('txComment', 'focus', () => {
+    document.getElementById('transactionForm')?.classList.add('keyboard-open');
+  });
+  safeBind('txComment', 'blur', () => {
+    setTimeout(() => {
+      document.getElementById('transactionForm')?.classList.remove('keyboard-open');
+    }, 100);
+  });
+  safeBind('txComment', 'keydown', e => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      e.target.blur();
+    }
+  });
+  safeBind('txAmountAreaBtn', 'click', () => {
+    document.getElementById('txComment')?.blur();
+    document.getElementById('transactionForm')?.classList.remove('keyboard-open');
   });
 
   safeBind('txAmount', 'input', updateTxAmountUI);
@@ -3415,28 +3678,30 @@ function bindEvents() {
     });
   });
 
-  // 15. Настройки, Облако и ИИ
+  // 15. Настройки, Облако и ИИ (мгновенное автосохранение + кнопка сохранения)
   safeBind('themeToggle', 'click', toggleTheme);
   safeBind('settingsBtn', 'click', openSettingsDialog);
+  safeBind('saveAiSettingsBtn', 'click', () => saveAiSettings(true));
   safeBind('closeSettingsDialog', 'click', () => {
-    const keyEl = document.getElementById('aiApiKey');
-    if (keyEl) localStorage.setItem(AI_KEY, keyEl.value.trim());
-    const providerEl = document.getElementById('aiProvider');
-    if (providerEl) {
-      state.aiProvider = providerEl.value;
-      localStorage.setItem(AI_PROVIDER_KEY, state.aiProvider);
-    }
-    const urlEl = document.getElementById('aiApiUrl');
-    if (urlEl) {
-      state.aiApiUrl = urlEl.value.trim();
-      localStorage.setItem(AI_URL_KEY, state.aiApiUrl);
-    }
-    const modelEl = document.getElementById('aiModel');
-    if (modelEl) {
-      state.aiModel = modelEl.value.trim();
-      localStorage.setItem(AI_MODEL_KEY, state.aiModel);
-    }
+    saveAiSettings(false);
     document.getElementById('settingsDialog')?.close();
+  });
+
+  // Автосохранение ключа и модели ИИ при любом вводе или закрытии окна
+  const settingsDialogEl = document.getElementById('settingsDialog');
+  if (settingsDialogEl) {
+    settingsDialogEl.addEventListener('close', () => saveAiSettings(false));
+  }
+  ['aiApiKey', 'aiModel', 'aiApiUrl'].forEach(id => {
+    safeBind(id, 'input', () => saveAiSettings(false));
+    safeBind(id, 'change', () => saveAiSettings(false));
+  });
+  document.querySelectorAll('.ai-model-chip').forEach(chip => {
+    chip.addEventListener('click', () => {
+      const modelInput = document.getElementById('aiModel');
+      if (modelInput) modelInput.value = chip.dataset.model;
+      saveAiSettings(true);
+    });
   });
 
   safeBind('supabaseLoginBtn', 'click', () => handleAuthAction('login'));
@@ -3521,8 +3786,9 @@ function bindEvents() {
     if (urlLabel) urlLabel.style.display = provider === 'custom' ? 'flex' : 'none';
     const modelInput = document.getElementById('aiModel');
     if (modelInput) {
-      modelInput.value = provider === 'google' ? 'gemini-3.1-flash-lite' : provider === 'openai' ? 'gpt-4o-mini' : 'deepseek-chat';
+      modelInput.value = provider === 'google' ? 'gemini-2.5-flash' : provider === 'openai' ? 'gpt-4o-mini' : 'deepseek-chat';
     }
+    saveAiSettings(false);
   });
 
   safeBind('aiInstructionBtn', 'click', () => {
@@ -3565,6 +3831,7 @@ function bindEvents() {
   safeBind('closeAiHistoryDialog', 'click', () => document.getElementById('aiHistoryDialog')?.close());
 
   safeBind('aiImportBtn', 'click', () => {
+    saveAiSettings(false);
     document.getElementById('settingsDialog')?.close();
     const d = document.getElementById('aiImportDialog');
     if (d) {
@@ -3615,11 +3882,14 @@ function bindEvents() {
 
 function registerSW() {
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('./sw.js').catch(() => {});
+    navigator.serviceWorker.register('./sw.js').then(reg => {
+      reg.update().catch(() => {});
+    }).catch(() => {});
   }
 }
 
 function init() {
+  preventMobileZoom();
   initTheme();
   loadData();
   initSupabase();
