@@ -282,24 +282,36 @@ function renderTemplates() {
     ];
   }
 
-  container.innerHTML = state.templates.map(t => {
-    return `<div class="template-chip" data-id="${escapeHtml(t.id)}">
+  const tplHtml = state.templates.map(t => {
+    const amt = parseFloat(t.amount) > 0 ? `<b class="tpl-amt">${escapeHtml(fmt(parseFloat(t.amount)).replace(/,00(?=\s)/, ''))}</b>` : '';
+    return `<div class="template-chip ${t.type === 'income' ? 'income' : ''}" data-id="${escapeHtml(t.id)}">
       <button class="template-chip-btn" type="button" data-id="${escapeHtml(t.id)}">
-        <span>${escapeHtml(t.name)}</span>
+        <span>${escapeHtml(t.name)}</span>${amt}
       </button>
-      <button class="template-chip-delete" type="button" data-id="${escapeHtml(t.id)}" title="Удалить шаблон">×</button>
+      <button class="template-chip-delete" type="button" data-id="${escapeHtml(t.id)}" title="Удалить кнопку">×</button>
     </div>`;
   }).join('');
 
-  container.querySelectorAll('.template-chip-btn').forEach(btn => {
+  // Автоматические «частые» категории, которых нет среди шаблонов
+  const usedCats = new Set(state.templates.map(t => t.categoryId));
+  const autoCats = getCategoriesByUsage('expense').filter(c => !usedCats.has(c.id)).slice(0, 4);
+  const autoHtml = autoCats.map(c => `<button type="button" class="template-chip auto" data-auto-cat="${escapeHtml(c.id)}">
+      <span class="template-chip-btn"><span>${escapeHtml(c.name)}</span></span>
+    </button>`).join('');
+
+  container.innerHTML = tplHtml + autoHtml || '<span class="templates-empty">Здесь появятся частые категории</span>';
+
+  container.querySelectorAll('.template-chip-btn[data-id]').forEach(btn => {
     btn.addEventListener('click', () => applyTemplate(btn.dataset.id));
   });
-
   container.querySelectorAll('.template-chip-delete').forEach(btn => {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
       deleteTemplate(btn.dataset.id);
     });
+  });
+  container.querySelectorAll('[data-auto-cat]').forEach(btn => {
+    btn.addEventListener('click', () => openAddDialog('expense', btn.dataset.autoCat));
   });
 }
 
@@ -307,10 +319,19 @@ function applyTemplate(id) {
   const t = (state.templates || []).find(x => x.id === id);
   if (!t) return;
 
+  const catOk = state.categories[t.type]?.some(c => c.id === t.categoryId);
+  const amt = parseFloat(t.amount);
+  // Есть сохранённая сумма — записываем в 1 касание (отмена в уведомлении)
+  if (catOk && amt > 0) {
+    addTxQuick({ type: t.type, amount: amt, categoryId: t.categoryId, comment: t.comment || '' });
+    return;
+  }
+
   openAddDialog(t.type);
   const catSel = document.getElementById('txCategory');
-  if (catSel && state.categories[t.type]?.some(c => c.id === t.categoryId)) {
+  if (catSel && catOk) {
     catSel.value = t.categoryId;
+    renderTxQuickCategoryBar();
   }
   const commentEl = document.getElementById('txComment');
   if (commentEl) commentEl.value = t.comment || '';
@@ -337,6 +358,9 @@ function saveAsTemplate(txId) {
     categoryId: tx.categoryId,
     comment: tx.comment || ''
   };
+  if (tx.amount > 0 && confirm(`Запомнить сумму ${fmt(tx.amount)}? Тогда кнопка будет добавлять запись в одно касание.`)) {
+    newTemplate.amount = tx.amount;
+  }
 
   if (!state.templates) state.templates = [];
   state.templates.push(newTemplate);
@@ -1153,6 +1177,7 @@ function renderBalance() {
 
 function renderHome() {
   const periodTxs = getPeriodTransactions();
+  renderHomeRecent();
 
   // 1. Блок Доход на Главной
   const incomeTxs = periodTxs.filter(t => t.type === 'income');
@@ -1189,6 +1214,34 @@ function renderHome() {
       bindCategoryRowClicks(expList, 'expense');
     }
   }
+}
+
+function renderHomeRecent() {
+  const block = document.getElementById('homeRecentBlock');
+  const list = document.getElementById('homeRecentList');
+  if (!block || !list) return;
+  const items = state.transactions.map((t, i) => ({ t, i }))
+    .sort((a, b) => (b.t.date || '').localeCompare(a.t.date || '') || b.i - a.i)
+    .slice(0, 4).map(x => x.t);
+  if (!items.length) { block.hidden = true; list.innerHTML = ''; return; }
+  block.hidden = false;
+  const today = todayISO();
+  const y = new Date(); y.setDate(y.getDate() - 1);
+  const yest = `${y.getFullYear()}-${String(y.getMonth() + 1).padStart(2, '0')}-${String(y.getDate()).padStart(2, '0')}`;
+  list.innerHTML = items.map(tx => {
+    const cat = getCat(tx.type, tx.categoryId);
+    const when = tx.date === today ? 'Сегодня' : tx.date === yest ? 'Вчера' : fmtDate(tx.date);
+    const title = tx.comment ? escapeHtml(tx.comment) : escapeHtml(cleanCatTitle(cat.name));
+    const sub = tx.comment ? `${when} · ${escapeHtml(cleanCatTitle(cat.name))}` : when;
+    return `<li class="recent-item" data-id="${escapeHtml(tx.id)}">
+      ${renderCatBadgeHTML(cat)}
+      <div class="recent-body"><div class="recent-title">${title}</div><div class="recent-sub">${sub}</div></div>
+      <div class="recent-amount ${tx.type}">${tx.type === 'expense' ? '−' : '+'}${fmt(tx.amount)}</div>
+    </li>`;
+  }).join('');
+  list.querySelectorAll('.recent-item').forEach(li => {
+    li.addEventListener('click', () => openEditDialog(li.dataset.id));
+  });
 }
 
 function buildCategorySummaryRowsHTML(txs, type, showQuickAdd = false) {
@@ -1543,8 +1596,8 @@ function renderTxQuickCategoryBar() {
 
   bar.hidden = false;
   const mode = state.txModalMode === 'income' ? 'income' : 'expense';
-  const cats = state.categories[mode] || [];
-  const activeId = sel.value || cats[0]?.id;
+  const cats = getCategoriesByUsage(mode);
+  const activeId = sel.value || (state.categories[mode] || [])[0]?.id;
 
   bar.innerHTML = cats.map(c => {
     const isActive = c.id === activeId;
@@ -1552,14 +1605,19 @@ function renderTxQuickCategoryBar() {
       <span class="tx-quick-cat-dot" style="background:${escapeHtml(c.color || '#F5BD7A')}"></span>
       <span>${escapeHtml(c.name)}</span>
     </button>`;
-  }).join('');
+  }).join('') + '<button type="button" class="tx-quick-cat-pill tx-quick-cat-add" id="txQuickCatAddPill" aria-label="Новая категория">+</button>';
 
-  bar.querySelectorAll('.tx-quick-cat-pill').forEach(btn => {
+  bar.querySelectorAll('.tx-quick-cat-pill[data-cat-id]').forEach(btn => {
     btn.addEventListener('click', () => {
       sel.value = btn.dataset.catId;
       bar.querySelectorAll('.tx-quick-cat-pill').forEach(b => b.classList.toggle('active', b === btn));
     });
   });
+  const addPill = document.getElementById('txQuickCatAddPill');
+  if (addPill) addPill.addEventListener('click', () => openCategoryDialog(mode));
+
+  const act = bar.querySelector('.tx-quick-cat-pill.active');
+  if (act) bar.scrollLeft = Math.max(0, act.offsetLeft - 16);
 }
 
 function renderAccountSelects() {
@@ -1668,6 +1726,7 @@ function setTxModalMode(mode) {
     if (quickBar) quickBar.hidden = true;
     if (targetRow) targetRow.hidden = false;
     if (accLabel) accLabel.textContent = 'Со счета';
+    if (typeof setTxMoreOpen === 'function') setTxMoreOpen(true);
   } else {
     if (catRow) catRow.hidden = false;
     if (targetRow) targetRow.hidden = true;
@@ -1711,6 +1770,7 @@ function updateTxAmountUI() {
 }
 
 function updateTxDateLabel() {
+  syncDateChips();
   const dateInput = document.getElementById('txDate');
   const label = document.getElementById('txDateHumanLabel');
   if (!dateInput || !label) return;
@@ -1782,6 +1842,15 @@ function openAddDialog(forcedMode, preselectedCategoryId) {
     }
   }
 
+  if (!preselectedCategoryId && mode !== 'transfer') {
+    const last = getLastCats()[mode === 'income' ? 'income' : 'expense'];
+    const catEl2 = document.getElementById('txCategory');
+    if (catEl2 && last && (state.categories[mode] || []).some(c => c.id === last)) {
+      catEl2.value = last;
+      renderTxQuickCategoryBar();
+    }
+  }
+
   const amtInput = document.getElementById('txAmount');
   if (amtInput) amtInput.value = '';
   updateTxAmountUI();
@@ -1803,6 +1872,7 @@ function openAddDialog(forcedMode, preselectedCategoryId) {
   const commentEl = document.getElementById('txComment');
   if (commentEl) commentEl.value = '';
 
+  setTxMoreOpen(mode === 'transfer');
   document.getElementById('transactionDialog').showModal();
 }
 
@@ -1848,6 +1918,7 @@ function openEditDialog(id) {
   const commentEl = document.getElementById('txComment');
   if (commentEl) commentEl.value = tx.comment || '';
 
+  setTxMoreOpen(tx.paid === false || (tx.recurrence && tx.recurrence !== 'none') || (tx.accountId && tx.accountId !== 'default'));
   document.getElementById('transactionDialog').showModal();
 }
 
@@ -1940,6 +2011,7 @@ function saveTransaction(e) {
     }
   } else {
     const newTx = { id: uid(), type: txType, amount, categoryId, date, comment, accountId, paid, recurrence };
+    rememberLastCat(txType, categoryId);
     state.transactions.push(newTx);
     saveData();
     render();
@@ -3270,6 +3342,247 @@ function initVoiceInput() {
 }
 
 /* ===== ПРИВЯЗКА ВСЕХ СОБЫТИЙ ===== */
+/* ===== v4: БЫСТРЫЙ ВВОД (запись за 5–10 секунд) ===== */
+const LAST_CAT_KEY = 'koshelek_last_cat';
+
+function todayISO() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function getLastCats() {
+  try { return JSON.parse(localStorage.getItem(LAST_CAT_KEY)) || {}; } catch { return {}; }
+}
+
+function rememberLastCat(type, id) {
+  const m = getLastCats();
+  m[type] = id;
+  try { localStorage.setItem(LAST_CAT_KEY, JSON.stringify(m)); } catch {}
+}
+
+function getCategoriesByUsage(type) {
+  const cats = state.categories[type] || [];
+  const usage = {};
+  state.transactions.forEach(t => {
+    if (t.type !== type) return;
+    if (t.comment && /^Перевод [→←]/.test(t.comment)) return;
+    usage[t.categoryId] = (usage[t.categoryId] || 0) + 1;
+  });
+  return cats.map((c, i) => ({ c, i }))
+    .sort((a, b) => ((usage[b.c.id] || 0) - (usage[a.c.id] || 0)) || (a.i - b.i))
+    .map(x => x.c);
+}
+
+function addTxQuick({ type, amount, categoryId, comment }, silent = false) {
+  const date = todayISO();
+  const newTx = { id: uid(), type, amount, categoryId, date, comment: comment || '', accountId: 'default', paid: true, recurrence: 'none' };
+  const d = new Date(date + 'T00:00:00');
+  state.selectedYear = d.getFullYear();
+  state.selectedMonth = d.getMonth();
+  state.transactions.push(newTx);
+  rememberLastCat(type, categoryId);
+  saveData();
+  render();
+  syncItem('transactions', 'upsert', newTx);
+  if (!silent) {
+    const catName = cleanCatTitle(getCat(type, categoryId).name);
+    showToast(`${type === 'expense' ? '−' : '+'}${fmt(amount)} · ${catName}`, () => undoQuickTx([newTx.id]));
+  }
+  return newTx;
+}
+
+function undoQuickTx(ids) {
+  ids.forEach(id => {
+    const idx = state.transactions.findIndex(t => t.id === id);
+    if (idx !== -1) {
+      state.transactions.splice(idx, 1);
+      syncItem('transactions', 'delete', { id });
+    }
+  });
+  saveData();
+  render();
+  showToast('Добавление отменено');
+}
+
+function parseQuickSegment(raw) {
+  const text = (raw || '').trim();
+  if (!text) return null;
+  const m = text.match(/(\d+(?:[ \u00a0]\d{3})*(?:[.,]\d+)?)/);
+  if (!m) return { amount: 0, rest: text };
+  const amount = parseFloat(m[1].replace(/[ \u00a0]/g, '').replace(',', '.'));
+  const rest = (text.slice(0, m.index) + ' ' + text.slice(m.index + m[0].length))
+    .replace(/₽/g, ' ')
+    .replace(/(^|\s)(рублей|рубля|руб\.?|р\.?|rub)(?=\s|$)/gi, ' ')
+    .replace(/\s+/g, ' ').trim();
+  return { amount, rest, plus: /^\s*\+/.test(text) };
+}
+
+function normWord(s) {
+  return (s || '').toLowerCase().replace(/ё/g, 'е').replace(/[^a-zа-я0-9]/g, '');
+}
+
+function findCategoryByText(rest) {
+  const words = rest.split(/\s+/).map(normWord).filter(w => w.length >= 3);
+  if (!words.length) return null;
+  let best = null, bestScore = 0;
+  ['expense', 'income'].forEach(type => {
+    (state.categories[type] || []).forEach(c => {
+      cleanCatTitle(c.name).split(/\s+/).map(normWord).filter(w => w.length >= 3).forEach(nw => {
+        words.forEach(w => {
+          const n = Math.min(5, w.length, nw.length);
+          if ((n >= 4 || w === nw) && w.slice(0, n) === nw.slice(0, n) && n > bestScore) {
+            bestScore = n;
+            best = { type, cat: c, word: w };
+          }
+        });
+      });
+    });
+  });
+  if (!best) return null;
+  const comment = rest.split(/\s+/).filter(x => normWord(x) !== best.word).join(' ');
+  return { type: best.type, cat: best.cat, comment };
+}
+
+async function submitQuickZone(raw) {
+  const input = document.getElementById('quickZoneInput');
+  const segments = raw.split(/[,;\n]+/).map(s => s.trim()).filter(Boolean);
+  if (!segments.length) return;
+
+  const added = [];
+  const leftovers = [];
+  let noAmount = false;
+  segments.forEach(seg => {
+    const p = parseQuickSegment(seg);
+    if (!p) return;
+    if (!(p.amount > 0)) { noAmount = true; return; }
+    const hit = findCategoryByText(p.rest);
+    if (hit) {
+      added.push(addTxQuick({ type: hit.type, amount: p.amount, categoryId: hit.cat.id, comment: hit.comment }, true));
+    } else {
+      leftovers.push({ seg, p });
+    }
+  });
+
+  if (added.length) {
+    if (input) input.value = '';
+    const ids = added.map(t => t.id);
+    if (added.length === 1 && !leftovers.length) {
+      const t = added[0];
+      showToast(`${t.type === 'expense' ? '−' : '+'}${fmt(t.amount)} · ${cleanCatTitle(getCat(t.type, t.categoryId).name)}`, () => undoQuickTx(ids));
+    } else {
+      showToast(`Добавлено записей: ${added.length}`, () => undoQuickTx(ids));
+    }
+  }
+
+  if (!leftovers.length) {
+    if (!added.length && noAmount) showToast('Добавьте сумму, например: такси 300');
+    return;
+  }
+
+  // Что не удалось сопоставить с категорией: ИИ (если подключен) или окно с готовой суммой
+  const leftText = leftovers.map(l => l.seg).join(', ');
+  if (localStorage.getItem(AI_KEY)) {
+    const before = state.transactions.length;
+    await quickAiSmartImport(leftText);
+    if (state.transactions.length > before && input && !added.length) input.value = '';
+    return;
+  }
+  const first = leftovers[0];
+  openAddDialog(first.p.plus ? 'income' : 'expense');
+  const amtInput = document.getElementById('txAmount');
+  if (amtInput) { amtInput.value = String(first.p.amount); updateTxAmountUI(); }
+  const commentEl = document.getElementById('txComment');
+  if (commentEl) commentEl.value = first.p.rest;
+  if (input) input.value = '';
+  showToast('Категорию не определил — выберите в ленте и сохраните');
+}
+
+function initQuickZoneVoice() {
+  const btn = document.getElementById('quickZoneMicBtn');
+  const input = document.getElementById('quickZoneInput');
+  if (!btn || !input) return;
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) { btn.hidden = true; return; }
+  const rec = new SR();
+  rec.lang = 'ru-RU';
+  rec.interimResults = false;
+  let listening = false;
+  btn.addEventListener('click', () => {
+    if (listening) rec.stop();
+    else { try { rec.start(); } catch {} }
+  });
+  rec.onstart = () => { listening = true; btn.classList.add('recording'); input.placeholder = 'Слушаю… например: такси 300'; };
+  rec.onend = () => { listening = false; btn.classList.remove('recording'); input.placeholder = 'такси 300, кофе 180…'; };
+  rec.onresult = ev => {
+    const text = ev.results[0] && ev.results[0][0] ? ev.results[0][0].transcript : '';
+    if (text) { input.value = text; submitQuickZone(text); }
+  };
+}
+
+function setTxMoreOpen(open) {
+  const wrap = document.getElementById('txMoreWrap');
+  const btn = document.getElementById('txMoreToggleBtn');
+  if (wrap) wrap.hidden = !open;
+  if (btn) { btn.setAttribute('aria-expanded', String(!!open)); btn.classList.toggle('open', !!open); }
+  updateTxMoreSummary();
+}
+
+function updateTxMoreSummary() {
+  const el = document.getElementById('txMoreSummary');
+  if (!el) return;
+  const acc = document.getElementById('txAccount');
+  const rec = document.getElementById('txRecurrence');
+  const parts = [];
+  parts.push(acc && acc.selectedOptions[0] ? acc.selectedOptions[0].textContent : 'По умолчанию');
+  if (rec && rec.value !== 'none') parts.push('повтор');
+  if (!state.txPaid) parts.push('не оплачено');
+  el.textContent = parts.join(' · ');
+}
+
+function syncDateChips() {
+  const dateEl = document.getElementById('txDate');
+  const t = document.getElementById('txDateTodayBtn');
+  const y = document.getElementById('txDateYestBtn');
+  if (!dateEl || !t || !y) return;
+  const yd = new Date(); yd.setDate(yd.getDate() - 1);
+  const yIso = `${yd.getFullYear()}-${String(yd.getMonth() + 1).padStart(2, '0')}-${String(yd.getDate()).padStart(2, '0')}`;
+  t.classList.toggle('active', dateEl.value === todayISO());
+  y.classList.toggle('active', dateEl.value === yIso);
+}
+
+function bindQuickEvents() {
+  const form = document.getElementById('quickZoneForm');
+  if (form) form.addEventListener('submit', e => {
+    e.preventDefault();
+    const v = document.getElementById('quickZoneInput').value.trim();
+    if (v) submitQuickZone(v);
+  });
+  safeBind('quickChipsEditBtn', 'click', () => {
+    const row = document.getElementById('quickTemplates');
+    const btn = document.getElementById('quickChipsEditBtn');
+    if (!row || !btn) return;
+    const on = row.classList.toggle('editing');
+    btn.textContent = on ? 'готово' : 'изменить';
+  });
+  safeBind('homeAllTxBtn', 'click', () => switchNavTab('transactions'));
+  safeBind('txMoreToggleBtn', 'click', () => {
+    const wrap = document.getElementById('txMoreWrap');
+    setTxMoreOpen(wrap ? wrap.hidden : true);
+  });
+  safeBind('txDateTodayBtn', 'click', () => {
+    document.getElementById('txDate').value = todayISO();
+    updateTxDateLabel();
+  });
+  safeBind('txDateYestBtn', 'click', () => {
+    const d = new Date(); d.setDate(d.getDate() - 1);
+    document.getElementById('txDate').value = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    updateTxDateLabel();
+  });
+  safeBind('txAccount', 'change', updateTxMoreSummary);
+  safeBind('txRecurrence', 'change', updateTxMoreSummary);
+  safeBind('txPaidToggleBtn', 'click', updateTxMoreSummary);
+}
+
 function safeBind(id, event, cb) {
   const el = document.getElementById(id);
   if (el) el.addEventListener(event, cb);
@@ -3895,6 +4208,8 @@ function init() {
   initSupabase();
   bindBalanceToggle();
   bindEvents();
+  bindQuickEvents();
+  initQuickZoneVoice();
   switchNavTab('home');
   registerSW();
   initVoiceInput();

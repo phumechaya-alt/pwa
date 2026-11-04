@@ -1,4 +1,4 @@
-const CACHE_NAME = 'koshelek-v23-ergonomic-ai';
+const CACHE_NAME = 'koshelek-v24-quick-entry';
 const ASSETS = [
   './',
   './index.html',

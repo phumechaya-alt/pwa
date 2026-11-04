@@ -134,10 +134,30 @@
 
     <!-- ================= ВКЛАДКА 1: ДОМОЙ ================= -->
     <main id="homeSection" class="page-section">
-      <!-- Блок «Сводка» -->
+      <!-- БЫСТРЫЙ ВВОД: запись за 5–10 секунд -->
+      <section class="quick-zone" id="quickZone">
+        <div class="quick-zone-head">
+          <h2 class="script-heading qz-title">Что потратили?</h2>
+          <button id="quickAiAddBtn" class="quick-ai-btn" type="button" title="Несколько записей сразу через ИИ">
+            <span>✨ Несколько сразу</span>
+          </button>
+        </div>
+        <form id="quickZoneForm" class="quick-input-row" autocomplete="off">
+          <input id="quickZoneInput" type="text" enterkeyhint="send" autocomplete="off" autocapitalize="none" placeholder="такси 300, кофе 180…" aria-label="Быстрая запись текстом или голосом">
+          <button type="button" id="quickZoneMicBtn" class="qz-icon-btn" aria-label="Сказать голосом"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" y1="19" x2="12" y2="22"></line></svg></button>
+          <button type="submit" id="quickZoneSendBtn" class="qz-send-btn" aria-label="Добавить"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg></button>
+        </form>
+        <div class="qz-chips-head">
+          <span class="templates-title">⚡ Быстрые кнопки</span>
+          <button id="quickChipsEditBtn" class="text-link-btn" type="button">изменить</button>
+        </div>
+        <div id="quickTemplates" class="templates-row"></div>
+      </section>
+
+      <!-- Сводка -->
       <section class="home-summary-section">
         <div class="home-block-header">
-          <h2 class="script-heading">Сводка</h2>
+          <h2 class="script-heading sm">Сводка</h2>
           <button id="homeBalanceDetailsBtn" class="text-link-btn" type="button">Баланс ›</button>
         </div>
         <div class="summary-three-cols" id="homeSummaryCols" title="Нажмите для подробностей или корректировки баланса">
@@ -156,25 +176,19 @@
         </div>
       </section>
 
-      <!-- Блок «Доход» -->
-      <section class="home-block">
+      <!-- Последние записи -->
+      <section class="home-block" id="homeRecentBlock" hidden>
         <div class="home-block-header">
-          <h2 class="script-heading">Доход</h2>
-          <button id="homeAddIncomeBtn" class="quick-sect-add-btn income" type="button">+ Доход</button>
+          <h2 class="script-heading sm">Последние</h2>
+          <button id="homeAllTxBtn" class="text-link-btn" type="button">Все ›</button>
         </div>
-        <div id="homeIncomeEmpty" class="dashed-empty-card" role="button" tabindex="0" aria-label="Добавить доход">
-          <span class="mint-plus-circle" aria-hidden="true">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2.2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
-          </span>
-          <p class="dashed-empty-text">У вас нет дохода за этот период. Нажмите, чтобы добавить.</p>
-        </div>
-        <ul id="homeIncomeList" class="ref-category-list" hidden></ul>
+        <ul id="homeRecentList" class="recent-list"></ul>
       </section>
 
       <!-- Блок «Расходы» -->
       <section class="home-block">
         <div class="home-block-header">
-          <h2 class="script-heading">Расходы</h2>
+          <h2 class="script-heading sm">Расходы</h2>
           <div class="home-block-actions">
             <button id="homeManageCategoriesBtn" class="text-link-btn" type="button">Категории</button>
             <button id="homeAddExpenseBtn" class="quick-sect-add-btn expense" type="button">+ Расход</button>
@@ -184,21 +198,24 @@
           <span class="coral-plus-circle" aria-hidden="true">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2.2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
           </span>
-          <p class="dashed-empty-text">У вас нет расходов за этот период. Нажмите, чтобы добавить.</p>
+          <p class="dashed-empty-text">Расходов за этот период нет. Напишите выше или нажмите сюда.</p>
         </div>
         <ul id="homeExpenseList" class="ref-category-list"></ul>
       </section>
 
-      <!-- Быстрые шаблоны и ИИ-добавление -->
-      <section class="templates-section">
-        <div class="templates-header">
-          <span class="templates-title">⚡ Быстрые шаблоны</span>
-          <button id="quickAiAddBtn" class="quick-ai-btn" type="button">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3"><path d="m21.64 3.64-1.28-1.28a1.21 1.21 0 0 0-1.72 0L2.36 18.64a1.21 1.21 0 0 0 0 1.72l1.28 1.28a1.21 1.21 0 0 0 1.72 0L21.64 5.36a1.21 1.21 0 0 0 0-1.72Z"></path></svg>
-            <span>Добавить с ИИ</span>
-          </button>
+      <!-- Блок «Доход» -->
+      <section class="home-block">
+        <div class="home-block-header">
+          <h2 class="script-heading sm">Доход</h2>
+          <button id="homeAddIncomeBtn" class="quick-sect-add-btn income" type="button">+ Доход</button>
         </div>
-        <div id="quickTemplates" class="templates-row"></div>
+        <div id="homeIncomeEmpty" class="dashed-empty-card" role="button" tabindex="0" aria-label="Добавить доход">
+          <span class="mint-plus-circle" aria-hidden="true">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2.2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+          </span>
+          <p class="dashed-empty-text">Доходов за этот период нет. Нажмите, чтобы добавить.</p>
+        </div>
+        <ul id="homeIncomeList" class="ref-category-list" hidden></ul>
       </section>
     </main>
 
@@ -442,19 +459,7 @@
 
     <!-- ================= ПЛАВАЮЩИЕ КНОПКИ СПРАВА ВНИЗУ ================= -->
     <div id="floatingActionsWrap" class="floating-actions">
-      <button id="fabHeartBtn" class="fab-heart-btn" type="button" title="Добавить с помощью ИИ или голоса" aria-label="Умное добавление с ИИ">
-        <svg width="28" height="26" viewBox="0 0 36 34" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <defs>
-            <radialGradient id="heartGrad" cx="35%" cy="30%" r="70%">
-              <stop offset="0%" stop-color="#FF9EBB"/>
-              <stop offset="55%" stop-color="#F45B94"/>
-              <stop offset="100%" stop-color="#D63270"/>
-            </radialGradient>
-          </defs>
-          <path d="M18 31.5 C18 31.5 3.5 22.2 3.5 11.8 C3.5 6.4 7.8 2.5 12.8 2.5 C15.7 2.5 17.3 4.1 18 5.6 C18.7 4.1 20.3 2.5 23.2 2.5 C28.2 2.5 32.5 6.4 32.5 11.8 C32.5 22.2 18 31.5 18 31.5 Z" fill="url(#heartGrad)"/>
-          <ellipse cx="11.5" cy="9.5" rx="3.2" ry="1.8" transform="rotate(-25 11.5 9.5)" fill="#FFFFFF" opacity="0.45"/>
-        </svg>
-      </button>
+      
 
       <button id="fabPlusBtn" class="fab-watercolor-plus" type="button" title="Новая транзакция" aria-label="Новая транзакция">
         <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2.2" stroke-linecap="round">
@@ -588,12 +593,30 @@
         <div class="tx-field-row">
           <span class="tx-field-label">Дата</span>
           <div class="tx-field-control">
+            <span class="tx-date-chips">
+              <button type="button" id="txDateTodayBtn" class="tx-date-chip">Сегодня</button>
+              <button type="button" id="txDateYestBtn" class="tx-date-chip">Вчера</button>
+            </span>
             <span id="txDateHumanLabel" class="tx-field-val">Сегодня</span>
             <input id="txDate" type="date" required class="tx-date-overlay-input" aria-label="Дата операции">
             <span class="tx-chevron">›</span>
           </div>
         </div>
 
+        <!-- Заметка (однострочный input с enterkeyhint="done", не вызывает зум и скрывает цифровую панель при наборе текста) -->
+        <div class="tx-field-row comment-row">
+          <span class="tx-field-label">Заметка</span>
+          <div class="tx-field-control comment-control">
+            <input id="txComment" type="text" enterkeyhint="done" autocomplete="off" placeholder="Комментарий (необязательно)...">
+          </div>
+        </div>
+
+        <button type="button" id="txMoreToggleBtn" class="tx-more-toggle" aria-expanded="false">
+          <span>Ещё: счёт, повтор, оплата</span>
+          <span id="txMoreSummary" class="tx-more-summary"></span>
+          <span class="tx-more-chev">›</span>
+        </button>
+        <div id="txMoreWrap" class="tx-more-wrap" hidden>
         <div class="tx-field-row">
           <span id="txAccountRowLabel" class="tx-field-label">Счет</span>
           <div class="tx-field-control">
@@ -627,14 +650,8 @@
             </button>
           </div>
         </div>
-
-        <!-- Заметка (однострочный input с enterkeyhint="done", не вызывает зум и скрывает цифровую панель при наборе текста) -->
-        <div class="tx-field-row comment-row">
-          <span class="tx-field-label">Заметка</span>
-          <div class="tx-field-control comment-control">
-            <input id="txComment" type="text" enterkeyhint="done" autocomplete="off" placeholder="Комментарий (необязательно)...">
-          </div>
         </div>
+
       </div>
 
       <!-- Встроенная цифровая клавиатура (с большой кнопкой «Готово / Сохранить» под палец) -->
