@@ -1,0 +1,3643 @@
+/* ==========================================================================
+   КОШЕЛЕК PWA — ОСНОВНАЯ ЛОГИКА (ПОЛНЫЙ РЕДИЗАЙН + ВСЕ ФУНКЦИИ СОХРАНЕНЫ)
+   ========================================================================== */
+
+const STORAGE_KEY = 'koshelek_data';
+const THEME_KEY = 'koshelek_theme';
+const AI_KEY = 'koshelek_ai_key';
+const AI_PROVIDER_KEY = 'koshelek_ai_provider';
+const AI_URL_KEY = 'koshelek_ai_url';
+const AI_MODEL_KEY = 'koshelek_ai_model';
+const ACCOUNTS_KEY = 'koshelek_accounts';
+const PROMO_KEY = 'koshelek_promo_visible';
+
+const DEFAULT_CATEGORIES = {
+  expense: [
+    { id: 'e_prod', name: '🛒 Продукты', color: '#F5BD7A', iconType: 'cart' },
+    { id: 'e_net', name: '📶 Интернет', color: '#F48278', iconType: 'wifi' },
+    { id: 'e_taxi', name: '🚕 Такси', color: '#F5BD7A', iconType: 'taxi' },
+    { id: 'e1', name: '🍔 Еда', color: '#F48278', iconType: 'food' },
+    { id: 'e2', name: '🚌 Транспорт', color: '#F5BD7A', iconType: 'taxi' },
+    { id: 'e3', name: '🏠 Жильё', color: '#B794F4', iconType: 'home' },
+    { id: 'e4', name: '💊 Здоровье', color: '#F687B3', iconType: 'health' },
+    { id: 'e5', name: '🎮 Развлечения', color: '#76A9FA', iconType: 'fun' },
+    { id: 'e6', name: '👗 Одежда', color: '#F472B6', iconType: 'clothes' },
+    { id: 'e7', name: '📦 Прочее', color: '#94A3B8', iconType: 'misc' }
+  ],
+  income: [
+    { id: 'i1', name: '💼 Зарплата', color: '#67C992', iconType: 'salary' },
+    { id: 'i2', name: '💻 Фриланс', color: '#4FD1C5', iconType: 'freelance' },
+    { id: 'i3', name: '🎁 Подарок', color: '#F5BD7A', iconType: 'gift' },
+    { id: 'i4', name: '📈 Инвестиции', color: '#818CF8', iconType: 'invest' },
+    { id: 'i5', name: '💵 Прочее', color: '#94A3B8', iconType: 'income' }
+  ]
+};
+
+const DEFAULT_ACCOUNTS = [
+  { id: 'default', name: 'По умолчанию', initialBalance: 0 }
+];
+
+const nowInit = new Date();
+
+let state = {
+  transactions: [],
+  categories: { expense: [], income: [] },
+  accounts: [...DEFAULT_ACCOUNTS],
+  activeNav: 'home',          // 'home' | 'analytics' | 'transactions' | 'accounts' | 'guide'
+  activeTab: 'all',           // Для вкладки Транзакции: 'all' | 'expense' | 'income'
+  catDialogTab: 'expense',    // Для диалога категорий: 'expense' | 'income'
+  analyticsType: 'expense',   // Для вкладки Аналитика: 'expense' | 'income'
+  txModalMode: 'expense',     // Для диалога Новая транзакция: 'expense' | 'income' | 'transfer'
+  txPaid: true,               // Статус «Оплачено» в диалоге транзакции
+  txGroupingMode: 'day',      // 'day' (по референсу) или 'year_month' (по календарю)
+  selectedYear: nowInit.getFullYear(),
+  selectedMonth: nowInit.getMonth(),
+  periodScope: 'month',       // 'month' | 'all'
+  editingId: null,
+  filtersOpen: false,
+  dashFiltersOpen: false,
+  viewMode: 'list',
+  collapsedYears: new Set(),
+  collapsedMonths: new Set(),
+  collapsedYearsDetail: new Set(),
+  aiChatHistory: [],
+  filters: { search: '', category: 'all', sort: 'date_desc', dateFrom: '', dateTo: '', amountMin: '', amountMax: '' },
+  dashFilters: { search: '', category: 'all', amountMin: '', amountMax: '', dateFrom: '', dateTo: '' },
+  user: null,
+  syncQueue: [],
+  _isSyncing: false,
+  promoVisible: true
+};
+
+/* ===== ДАННЫЕ ИЗ РЕФЕРЕНСА (-1 182,00 ₽: Продукты 525, Интернет 450, Такси 207) ===== */
+function buildRefDataTxs() {
+  const y = state.selectedYear;
+  const m = String(state.selectedMonth + 1).padStart(2, '0');
+  return [
+    {
+      id: 'ref-tx-1',
+      type: 'expense',
+      amount: 525,
+      categoryId: 'e_prod',
+      date: `${y}-${m}-04`,
+      comment: '',
+      accountId: 'default',
+      paid: true,
+      recurrence: 'none'
+    },
+    {
+      id: 'ref-tx-2',
+      type: 'expense',
+      amount: 207,
+      categoryId: 'e_taxi',
+      date: `${y}-${m}-04`,
+      comment: 'Вике',
+      accountId: 'default',
+      paid: true,
+      recurrence: 'none'
+    },
+    {
+      id: 'ref-tx-3',
+      type: 'expense',
+      amount: 450,
+      categoryId: 'e_net',
+      date: `${y}-${m}-01`,
+      comment: '',
+      accountId: 'default',
+      paid: false,
+      recurrence: 'none'
+    }
+  ];
+}
+
+function loadRefData() {
+  ensureRefCategories();
+  state.transactions = buildRefDataTxs();
+  state.balanceAdjustment = 0;
+  saveData();
+  render();
+  const d = document.getElementById('settingsDialog');
+  if (d && d.open) d.close();
+  showToast('🌸 Загружены данные из референса (-1 182,00 ₽)');
+}
+
+function ensureRefCategories() {
+  ['expense', 'income'].forEach(type => {
+    DEFAULT_CATEGORIES[type].forEach(defCat => {
+      if (!state.categories[type].some(c => c.id === defCat.id)) {
+        state.categories[type].unshift({ ...defCat });
+      }
+    });
+  });
+}
+
+/* ===== ДЕМО-ДАННЫЕ (РЫБА — 50 ТРАНЗАКЦИЙ) ===== */
+function buildDemoDataTxs() {
+  const txs = [];
+  const now = new Date();
+
+  const subDays = (d, days) => {
+    const res = new Date(d);
+    res.setDate(res.getDate() - days);
+    return res.toISOString().slice(0, 10);
+  };
+
+  const cats = {
+    expense: { prod: 'e_prod', net: 'e_net', taxi: 'e_taxi', food: 'e1', transport: 'e2', rent: 'e3', health: 'e4', fun: 'e5', clothes: 'e6' },
+    income: { salary: 'i1', freelance: 'i2', gift: 'i3', invest: 'i4' }
+  };
+
+  for (let i = 0; i < 6; i++) {
+    txs.push({
+      id: 'demo-sal-' + i,
+      type: 'income',
+      amount: 65000,
+      categoryId: cats.income.salary,
+      date: subDays(now, i * 15 + 5),
+      comment: 'Основная зарплата',
+      accountId: 'default',
+      paid: true
+    });
+  }
+
+  for (let i = 0; i < 3; i++) {
+    txs.push({
+      id: 'demo-free-' + i,
+      type: 'income',
+      amount: i === 0 ? 32000 : 25000,
+      categoryId: cats.income.freelance,
+      date: subDays(now, i * 30 + 12),
+      comment: 'Разработка PWA приложения',
+      accountId: 'default',
+      paid: true
+    });
+  }
+
+  for (let i = 0; i < 3; i++) {
+    txs.push({
+      id: 'demo-rent-' + i,
+      type: 'expense',
+      amount: 38000,
+      categoryId: cats.expense.rent,
+      date: subDays(now, i * 30 + 26),
+      comment: 'Аренда квартиры и коммунальные',
+      accountId: 'default',
+      paid: true
+    });
+  }
+
+  const foodComments = ['Супермаркет ВкусВилл', 'Продукты домой', 'Обед в кафе', 'Кофе и десерт', 'Доставка продуктов'];
+  const foodAmounts = [525, 2400, 4800, 650, 280, 1800, 3200];
+  for (let i = 0; i < 20; i++) {
+    txs.push({
+      id: 'demo-food-' + i,
+      type: 'expense',
+      amount: foodAmounts[i % foodAmounts.length],
+      categoryId: i % 2 === 0 ? cats.expense.prod : cats.expense.food,
+      date: subDays(now, i * 3 + 1),
+      comment: foodComments[i % foodComments.length],
+      accountId: 'default',
+      paid: true
+    });
+  }
+
+  const transComments = ['Вике', 'Такси по городу', 'Пополнение Тройки', 'Каршеринг'];
+  const transAmounts = [207, 650, 1000, 450];
+  for (let i = 0; i < 10; i++) {
+    txs.push({
+      id: 'demo-trans-' + i,
+      type: 'expense',
+      amount: transAmounts[i % transAmounts.length],
+      categoryId: cats.expense.taxi,
+      date: subDays(now, i * 7 + 2),
+      comment: transComments[i % transComments.length],
+      accountId: 'default',
+      paid: true
+    });
+  }
+
+  txs.push({ id: 'demo-net-1', type: 'expense', amount: 450, categoryId: cats.expense.net, date: subDays(now, 3), comment: 'Домашний интернет', accountId: 'default', paid: false });
+  txs.push({ id: 'demo-health-1', type: 'expense', amount: 3200, categoryId: cats.expense.health, date: subDays(now, 14), comment: 'Витамины и аптека', accountId: 'default', paid: true });
+  txs.push({ id: 'demo-clothes-1', type: 'expense', amount: 8500, categoryId: cats.expense.clothes, date: subDays(now, 8), comment: 'Кроссовки', accountId: 'default', paid: true });
+  txs.push({ id: 'demo-invest-1', type: 'income', amount: 4500, categoryId: cats.income.invest, date: subDays(now, 20), comment: 'Дивиденды по акциям', accountId: 'default', paid: true });
+
+  return txs;
+}
+
+function loadDemoData() {
+  ensureRefCategories();
+  state.transactions = buildDemoDataTxs();
+  saveData();
+  render();
+  const d = document.getElementById('settingsDialog');
+  if (d && d.open) d.close();
+  showToast('🪄 Загружено 50 демо-транзакций!');
+}
+
+/* ===== ВЕКТОРНЫЕ ИКОНКИ КАТЕГОРИЙ В ПАСТЕЛЬНЫХ КРУЖКАХ (ПО РЕФЕРЕНСУ) ===== */
+function getCategorySvgIcon(catName, iconType) {
+  const lower = (catName || '').toLowerCase();
+  if (iconType === 'cart' || lower.includes('продукт') || lower.includes('покупк') || lower.includes('маркет')) {
+    return `<svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="20" r="1.5"></circle><circle cx="19" cy="20" r="1.5"></circle><path d="M2 3h3l2.4 11.5a2 2 0 0 0 2 1.5h9.2a2 2 0 0 0 2-1.5L22 7H6"></path></svg>`;
+  }
+  if (iconType === 'wifi' || lower.includes('интернет') || lower.includes('связь') || lower.includes('wi-fi')) {
+    return `<svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.55a11 11 0 0 1 14.08 0"></path><path d="M1.42 9a16 16 0 0 1 21.16 0"></path><path d="M8.53 16.11a6 6 0 0 1 6.95 0"></path><line x1="12" y1="20" x2="12.01" y2="20"></line></svg>`;
+  }
+  if (iconType === 'taxi' || lower.includes('такси') || lower.includes('транспорт') || lower.includes('траспорт') || lower.includes('авто') || lower.includes('метро')) {
+    return `<svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 17h14v-5l-2-6H7L5 12v5z"></path><circle cx="7.5" cy="14.5" r="1.2" fill="#ffffff"></circle><circle cx="16.5" cy="14.5" r="1.2" fill="#ffffff"></circle><path d="M10 6V4h4v2"></path><line x1="6" y1="17" x2="6" y2="19"></line><line x1="18" y1="17" x2="18" y2="19"></line></svg>`;
+  }
+  if (iconType === 'home' || lower.includes('жиль') || lower.includes('дом') || lower.includes('аренд')) {
+    return `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10l9-7 9 7v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V10z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg>`;
+  }
+  if (iconType === 'salary' || lower.includes('зарплат') || lower.includes('доход')) {
+    return `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"></line><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg>`;
+  }
+  const em = extractIcon(catName);
+  if (em) {
+    return `<span style="font-size:17px; line-height:1;">${em}</span>`;
+  }
+  return `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="5"></circle></svg>`;
+}
+
+function renderCatBadgeHTML(cat, extraClass = '') {
+  const color = (cat && cat.color) ? cat.color : '#F5BD7A';
+  const inner = getCategorySvgIcon(cat ? cat.name : '', cat ? cat.iconType : '');
+  return `<div class="pastel-cat-badge ${extraClass}" style="background:${color}; --cat-color:${color}">${inner}</div>`;
+}
+
+function cleanCatTitle(name) {
+  return (name || '').replace(/^\p{Emoji}\s*/u, '').trim() || name || 'Без категории';
+}
+
+/* ===== БЫСТРЫЕ ШАБЛОНЫ ===== */
+function renderTemplates() {
+  const container = document.getElementById('quickTemplates');
+  if (!container) return;
+
+  if (!state.templates) {
+    state.templates = JSON.parse(localStorage.getItem('koshelek_templates')) || [
+      { id: 't1', name: '🛒 Продукты', type: 'expense', categoryId: 'e_prod', comment: 'Супермаркет' },
+      { id: 't2', name: '🚕 Такси', type: 'expense', categoryId: 'e_taxi', comment: 'Поездка' },
+      { id: 't3', name: '💼 Зарплата', type: 'income', categoryId: 'i1', comment: 'Зарплата' }
+    ];
+  }
+
+  container.innerHTML = state.templates.map(t => {
+    return `<div class="template-chip" data-id="${escapeHtml(t.id)}">
+      <button class="template-chip-btn" type="button" data-id="${escapeHtml(t.id)}">
+        <span>${escapeHtml(t.name)}</span>
+      </button>
+      <button class="template-chip-delete" type="button" data-id="${escapeHtml(t.id)}" title="Удалить шаблон">×</button>
+    </div>`;
+  }).join('');
+
+  container.querySelectorAll('.template-chip-btn').forEach(btn => {
+    btn.addEventListener('click', () => applyTemplate(btn.dataset.id));
+  });
+
+  container.querySelectorAll('.template-chip-delete').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      deleteTemplate(btn.dataset.id);
+    });
+  });
+}
+
+function applyTemplate(id) {
+  const t = (state.templates || []).find(x => x.id === id);
+  if (!t) return;
+
+  openAddDialog(t.type);
+  const catSel = document.getElementById('txCategory');
+  if (catSel && state.categories[t.type]?.some(c => c.id === t.categoryId)) {
+    catSel.value = t.categoryId;
+  }
+  const commentEl = document.getElementById('txComment');
+  if (commentEl) commentEl.value = t.comment || '';
+}
+
+function saveAsTemplate(txId) {
+  const tx = state.transactions.find(t => t.id === txId);
+  if (!tx) return;
+
+  const cat = getCat(tx.type, tx.categoryId);
+  const icon = extractIcon(cat.name) || (tx.type === 'expense' ? '🛒' : '💼');
+  const name = cleanCatTitle(cat.name);
+
+  const customName = prompt('Введите название для быстрого шаблона:', name);
+  if (customName === null) return;
+
+  const finalName = customName.trim() || name;
+  const displayName = finalName.length > 16 ? finalName.slice(0, 15) + '…' : finalName;
+
+  const newTemplate = {
+    id: uid(),
+    name: `${icon} ${displayName}`,
+    type: tx.type,
+    categoryId: tx.categoryId,
+    comment: tx.comment || ''
+  };
+
+  if (!state.templates) state.templates = [];
+  state.templates.push(newTemplate);
+  localStorage.setItem('koshelek_templates', JSON.stringify(state.templates));
+  renderTemplates();
+  syncItem('templates', 'upsert', newTemplate);
+  showToast('⭐ Сохранено в быстрые шаблоны!');
+}
+
+function deleteTemplate(id) {
+  if (!state.templates) return;
+  state.templates = state.templates.filter(t => t.id !== id);
+  localStorage.setItem('koshelek_templates', JSON.stringify(state.templates));
+  renderTemplates();
+  syncItem('templates', 'delete', { id });
+  showToast('Шаблон удален');
+}
+
+/* ===== ОБЛАЧНАЯ СИНХРОНИЗАЦИЯ SUPABASE ===== */
+let supabaseClient = null;
+
+async function initSupabase() {
+  const url = localStorage.getItem('supabase_url') || '';
+  const key = localStorage.getItem('supabase_key') || '';
+
+  if (url && key && window.supabase) {
+    try {
+      supabaseClient = window.supabase.createClient(url, key);
+      const { data: { session } } = await supabaseClient.auth.getSession();
+      if (session) {
+        state.user = session.user;
+        await onUserLoggedIn();
+      } else {
+        state.user = null;
+        updateCloudUI();
+      }
+    } catch (e) {
+      console.error('Supabase initialization failed', e);
+      supabaseClient = null;
+      state.user = null;
+      updateCloudUI();
+    }
+  } else {
+    supabaseClient = null;
+    state.user = null;
+    updateCloudUI();
+  }
+}
+
+async function onUserLoggedIn() {
+  if (!supabaseClient || !state.user) return;
+  try {
+    showToast('☁️ Подключение успешно. Синхронизируем...');
+    const [
+      { data: cloudTxs, error: txErr },
+      { data: cloudCats, error: catErr },
+      { data: cloudProfile, error: profErr },
+      { data: cloudTemplates, error: tempErr },
+      { data: cloudAiSessions, error: aiErr }
+    ] = await Promise.all([
+      supabaseClient.from('transactions').select('*').eq('user_id', state.user.id),
+      supabaseClient.from('categories').select('*').eq('user_id', state.user.id),
+      supabaseClient.from('profiles').select('*').eq('id', state.user.id).maybeSingle(),
+      supabaseClient.from('templates').select('*').eq('user_id', state.user.id),
+      supabaseClient.from('ai_sessions').select('*').eq('user_id', state.user.id)
+    ]);
+
+    if (txErr) throw txErr;
+    if (catErr) throw catErr;
+    if (profErr) throw profErr;
+    if (tempErr) throw tempErr;
+    if (aiErr) throw aiErr;
+
+    const localTxs = [...state.transactions];
+    const localCats = {
+      expense: [...state.categories.expense],
+      income: [...state.categories.income]
+    };
+    const localTemplates = state.templates ? [...state.templates] : [];
+    const localAiSessions = state.aiSessions ? [...state.aiSessions] : [];
+    const syncPromises = [];
+
+    const mergedCats = { expense: [], income: [] };
+    const cloudCatIds = new Set((cloudCats || []).filter(c => c && c.id).map(c => c.id));
+    (cloudCats || []).forEach(c => {
+      if (c && c.type && mergedCats[c.type]) {
+        mergedCats[c.type].push({ id: c.id, name: c.name, color: c.color });
+      }
+    });
+
+    ['expense', 'income'].forEach(type => {
+      localCats[type].forEach(lc => {
+        if (!lc) return;
+        const isDefault = DEFAULT_CATEGORIES[type].some(dc => dc.id === lc.id);
+        if (!cloudCatIds.has(lc.id)) {
+          mergedCats[type].push(lc);
+          if (!isDefault) {
+            syncPromises.push(syncItem('categories', 'upsert', { id: lc.id, type, name: lc.name, color: lc.color }));
+          }
+        }
+      });
+    });
+    state.categories = mergedCats;
+
+    const mergedTxs = [];
+    const cloudTxIds = new Set((cloudTxs || []).filter(t => t && t.id).map(t => t.id));
+    (cloudTxs || []).forEach(t => {
+      if (t) {
+        mergedTxs.push({
+          id: t.id,
+          type: t.type,
+          amount: parseFloat(t.amount) || 0,
+          categoryId: t.category_id,
+          date: t.date,
+          comment: t.comment || '',
+          accountId: 'default',
+          paid: true
+        });
+      }
+    });
+    localTxs.forEach(lt => {
+      if (lt && !cloudTxIds.has(lt.id)) {
+        mergedTxs.push(lt);
+        syncPromises.push(syncItem('transactions', 'upsert', lt));
+      }
+    });
+    state.transactions = mergedTxs;
+
+    if (cloudProfile) {
+      state.balanceAdjustment = parseFloat(cloudProfile.balance_adjustment) || 0;
+    } else {
+      const localAdj = state.balanceAdjustment || 0;
+      syncPromises.push(syncItem('profiles', 'upsert', { balanceAdjustment: localAdj }));
+    }
+
+    const mergedTemplates = [];
+    const cloudTempIds = new Set((cloudTemplates || []).filter(t => t && t.id).map(t => t.id));
+    (cloudTemplates || []).forEach(t => {
+      if (t) {
+        mergedTemplates.push({
+          id: t.id,
+          name: t.name,
+          type: t.type,
+          categoryId: t.category_id,
+          comment: t.comment || ''
+        });
+      }
+    });
+    localTemplates.forEach(lt => {
+      if (lt && !cloudTempIds.has(lt.id)) {
+        mergedTemplates.push(lt);
+        syncPromises.push(syncItem('templates', 'upsert', lt));
+      }
+    });
+    state.templates = mergedTemplates;
+    localStorage.setItem('koshelek_templates', JSON.stringify(state.templates));
+
+    const mergedAiSessions = [];
+    const cloudAiIds = new Set((cloudAiSessions || []).filter(a => a && a.id).map(a => a.id));
+    (cloudAiSessions || []).forEach(a => {
+      if (a) {
+        mergedAiSessions.push({ id: a.id, date: a.date, title: a.title, history: a.history || [] });
+      }
+    });
+    localAiSessions.forEach(la => {
+      if (la && !cloudAiIds.has(la.id)) {
+        mergedAiSessions.push(la);
+        syncPromises.push(syncItem('ai_sessions', 'upsert', la));
+      }
+    });
+    state.aiSessions = mergedAiSessions;
+    localStorage.setItem('koshelek_ai_sessions', JSON.stringify(state.aiSessions));
+
+    saveData();
+    render();
+    renderTemplates();
+    await Promise.all(syncPromises);
+    await drainSyncQueue();
+    updateCloudUI();
+    showToast('✨ Синхронизация с облаком успешна!');
+  } catch (err) {
+    console.error('Error during cloud merger:', err);
+    showToast(`Ошибка синхронизации: ${err.message || err}`);
+  }
+}
+
+function onUserLoggedOut() {
+  loadData();
+  render();
+  renderTemplates();
+}
+
+function updateCloudUI() {
+  const badge = document.getElementById('cloudStatusBadge');
+  const userStatus = document.getElementById('cloudUserStatus');
+  const dbAuthFormBlock = document.getElementById('dbAuthFormBlock');
+  const dbLoggedInBlock = document.getElementById('dbLoggedInBlock');
+  const userEmailDisplay = document.getElementById('supabaseUserEmailDisplay');
+  const summaryEl = document.getElementById('dbSettingsSummary');
+  const detailsEl = summaryEl ? summaryEl.closest('details') : null;
+
+  const url = localStorage.getItem('supabase_url') || '';
+  const key = localStorage.getItem('supabase_key') || '';
+  const urlInput = document.getElementById('supabaseUrlInput');
+  const keyInput = document.getElementById('supabaseKeyInput');
+  if (urlInput && !urlInput.value) urlInput.value = url;
+  if (keyInput && !keyInput.value) keyInput.value = key;
+
+  if (state.user) {
+    if (badge) {
+      badge.className = 'status-badge cloud';
+      badge.title = `Облако Supabase подключено (${state.user.email}).`;
+    }
+    if (userStatus) {
+      userStatus.innerHTML = `<span>Режим: <strong style="color: var(--mint);">Облако подключено</strong></span>`;
+    }
+    if (dbAuthFormBlock) dbAuthFormBlock.style.display = 'none';
+    if (dbLoggedInBlock) dbLoggedInBlock.style.display = 'flex';
+    if (userEmailDisplay) userEmailDisplay.textContent = state.user.email || 'Supabase User';
+    const localWarningCard = document.getElementById('localWarningCard');
+    if (localWarningCard) localWarningCard.remove();
+  } else {
+    if (badge) {
+      badge.className = 'status-badge local';
+      badge.title = 'Локальный режим. Нажмите, чтобы подключить облако.';
+    }
+    if (userStatus) {
+      userStatus.innerHTML = `<span>Режим: <strong>Локальный кошелёк (Offline)</strong></span>`;
+    }
+    if (dbAuthFormBlock) dbAuthFormBlock.style.display = 'flex';
+    if (dbLoggedInBlock) dbLoggedInBlock.style.display = 'none';
+    if (detailsEl) detailsEl.open = !(url && key);
+    renderLocalWarningCard();
+  }
+}
+
+function renderLocalWarningCard() {
+  const existing = document.getElementById('localWarningCard');
+  if (existing) existing.remove();
+  if (state.user) return;
+  if (state.transactions.length <= 5) return;
+
+  const list = document.getElementById('transactionList');
+  if (!list) return;
+
+  const card = document.createElement('div');
+  card.id = 'localWarningCard';
+  card.className = 'local-warning-card';
+  card.innerHTML = `
+    <div class="local-warning-title">☁️ Ваши данные хранятся локально</div>
+    <div class="local-warning-text">
+      Подключите бесплатное облако Supabase в настройках, чтобы синхронизировать записи между устройствами.
+    </div>
+    <button type="button" id="localWarningAuthBtn" class="pill-outline-btn sm">Настроить облако</button>
+  `;
+  list.appendChild(card);
+
+  const warnAuthBtn = document.getElementById('localWarningAuthBtn');
+  if (warnAuthBtn) {
+    warnAuthBtn.addEventListener('click', () => {
+      openSettingsDialog();
+    });
+  }
+}
+
+async function handleAuthAction(actionType) {
+  const email = document.getElementById('supabaseEmailInput').value.trim();
+  const password = document.getElementById('supabasePasswordInput').value.trim();
+  let url = document.getElementById('supabaseUrlInput').value.trim() || localStorage.getItem('supabase_url') || '';
+  let key = document.getElementById('supabaseKeyInput').value.trim() || localStorage.getItem('supabase_key') || '';
+
+  if (!url || !key) {
+    showToast('Укажите URL и Key базы данных Supabase');
+    const details = document.getElementById('dbSettingsSummary')?.closest('details');
+    if (details) details.open = true;
+    return;
+  }
+  if (!email || !password) {
+    showToast('Введите Email и Пароль');
+    return;
+  }
+
+  localStorage.setItem('supabase_url', url);
+  localStorage.setItem('supabase_key', key);
+  try {
+    supabaseClient = window.supabase.createClient(url, key);
+  } catch {
+    showToast('Ошибка инициализации Supabase. Проверьте URL и Key.');
+    return;
+  }
+
+  const loginBtn = document.getElementById('supabaseLoginBtn');
+  const regBtn = document.getElementById('supabaseRegisterBtn');
+  if (loginBtn) loginBtn.disabled = true;
+  if (regBtn) regBtn.disabled = true;
+
+  try {
+    if (actionType === 'login') {
+      const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
+      if (error) throw error;
+      state.user = data.user;
+      await onUserLoggedIn();
+    } else {
+      const { data, error } = await supabaseClient.auth.signUp({ email, password });
+      if (error) throw error;
+      if (data.user && data.session) {
+        state.user = data.user;
+        await onUserLoggedIn();
+      } else {
+        showToast('✉️ Подтвердите регистрацию по ссылке на почте!');
+      }
+    }
+    document.getElementById('supabaseEmailInput').value = '';
+    document.getElementById('supabasePasswordInput').value = '';
+  } catch (err) {
+    showToast(`Ошибка: ${err.message || err}`);
+  } finally {
+    if (loginBtn) loginBtn.disabled = false;
+    if (regBtn) regBtn.disabled = false;
+  }
+}
+
+async function handleSupabaseLogout() {
+  if (!confirm('Выйти из облачного аккаунта?')) return;
+  if (supabaseClient) {
+    try { await supabaseClient.auth.signOut(); } catch {}
+  }
+  state.user = null;
+  onUserLoggedOut();
+  updateCloudUI();
+  showToast('Вы вышли из облачного аккаунта');
+}
+
+async function handleFullDisconnect() {
+  if (!confirm('Полностью отключить облачную синхронизацию и удалить параметры БД?')) return;
+  if (supabaseClient && state.user) {
+    try { await supabaseClient.auth.signOut(); } catch {}
+  }
+  localStorage.removeItem('supabase_url');
+  localStorage.removeItem('supabase_key');
+  supabaseClient = null;
+  state.user = null;
+  onUserLoggedOut();
+  updateCloudUI();
+  const urlEl = document.getElementById('supabaseUrlInput');
+  if (urlEl) urlEl.value = '';
+  const keyEl = document.getElementById('supabaseKeyInput');
+  if (keyEl) keyEl.value = '';
+  showToast('Облачные параметры сброшены');
+}
+
+async function syncItem(table, action, data) {
+  if (!supabaseClient || !state.user) return;
+  try {
+    if (table === 'profiles' && action === 'upsert') {
+      const { error } = await supabaseClient.from('profiles').upsert({
+        id: state.user.id,
+        balance_adjustment: data.balanceAdjustment,
+        updated_at: new Date().toISOString()
+      });
+      if (error) throw error;
+    } else if (table === 'categories') {
+      if (action === 'upsert') {
+        const { error } = await supabaseClient.from('categories').upsert({
+          id: data.id, user_id: state.user.id, name: data.name, color: data.color, type: data.type
+        });
+        if (error) throw error;
+      } else if (action === 'delete') {
+        const { error } = await supabaseClient.from('categories').delete().eq('id', data.id).eq('user_id', state.user.id);
+        if (error) throw error;
+      }
+    } else if (table === 'transactions') {
+      if (action === 'upsert') {
+        const { error } = await supabaseClient.from('transactions').upsert({
+          id: data.id, user_id: state.user.id, type: data.type, amount: data.amount,
+          category_id: data.categoryId, date: data.date, comment: data.comment || ''
+        });
+        if (error) throw error;
+      } else if (action === 'delete') {
+        const { error } = await supabaseClient.from('transactions').delete().eq('id', data.id).eq('user_id', state.user.id);
+        if (error) throw error;
+      }
+    } else if (table === 'templates') {
+      if (action === 'upsert') {
+        const { error } = await supabaseClient.from('templates').upsert({
+          id: data.id, user_id: state.user.id, name: data.name, type: data.type,
+          category_id: data.categoryId, comment: data.comment || ''
+        });
+        if (error) throw error;
+      } else if (action === 'delete') {
+        const { error } = await supabaseClient.from('templates').delete().eq('id', data.id).eq('user_id', state.user.id);
+        if (error) throw error;
+      }
+    } else if (table === 'ai_sessions') {
+      if (action === 'upsert') {
+        const { error } = await supabaseClient.from('ai_sessions').upsert({
+          id: data.id, user_id: state.user.id, title: data.title, history: data.history, date: data.date
+        });
+        if (error) throw error;
+      } else if (action === 'delete') {
+        const { error } = await supabaseClient.from('ai_sessions').delete().eq('id', data.id).eq('user_id', state.user.id);
+        if (error) throw error;
+      }
+    }
+  } catch (err) {
+    queueSync(table, action, data);
+  }
+}
+
+function queueSync(table, action, data) {
+  if (!state.syncQueue) state.syncQueue = [];
+  const id = data.id || state.user?.id;
+  state.syncQueue = state.syncQueue.filter(q => !(q.table === table && (q.data.id === id || q.data.balanceAdjustment !== undefined)));
+  state.syncQueue.push({ table, action, data, timestamp: Date.now() });
+  localStorage.setItem('koshelek_sync_queue', JSON.stringify(state.syncQueue));
+}
+
+async function drainSyncQueue() {
+  if (!supabaseClient || !state.user || !navigator.onLine || state._isSyncing) return;
+  const queue = JSON.parse(localStorage.getItem('koshelek_sync_queue')) || [];
+  if (!queue.length) return;
+
+  state._isSyncing = true;
+  state.syncQueue = [];
+  localStorage.setItem('koshelek_sync_queue', JSON.stringify([]));
+  try {
+    for (const item of queue) {
+      await syncItem(item.table, item.action, item.data);
+    }
+    showToast('🔄 Облачная синхронизация завершена!');
+  } finally {
+    state._isSyncing = false;
+  }
+}
+
+window.addEventListener('online', async () => {
+  showToast('🔌 Соединение восстановлено. Синхронизирую...');
+  await drainSyncQueue();
+});
+
+/* ===== ХРАНЕНИЕ ДАННЫХ (PERSISTENCE) ===== */
+function loadData() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) {
+      const saved = JSON.parse(raw);
+      state.transactions = (saved.transactions || []).map(tx => ({
+        ...tx,
+        accountId: tx.accountId || 'default',
+        paid: tx.paid !== undefined ? tx.paid : true,
+        recurrence: tx.recurrence || 'none'
+      }));
+      state.categories = {
+        expense: saved.categories?.expense?.length ? saved.categories.expense : [...DEFAULT_CATEGORIES.expense],
+        income: saved.categories?.income?.length ? saved.categories.income : [...DEFAULT_CATEGORIES.income]
+      };
+      // Исправляем старую опечатку «Траспорт» -> «Транспорт» и добавляем референс-категории
+      state.categories.expense.forEach(c => {
+        if (c.name && c.name.includes('Траспорт')) {
+          c.name = c.name.replace('Траспорт', 'Транспорт');
+        }
+      });
+      ensureRefCategories();
+      state.balanceAdjustment = saved.balanceAdjustment || 0;
+    } else {
+      state.categories = {
+        expense: [...DEFAULT_CATEGORIES.expense],
+        income: [...DEFAULT_CATEGORIES.income]
+      };
+      state.balanceAdjustment = 0;
+      // По умолчанию загружаем транзакции из референса (-1 182,00 ₽)
+      state.transactions = buildRefDataTxs();
+      saveData();
+    }
+
+    const savedAccounts = JSON.parse(localStorage.getItem(ACCOUNTS_KEY));
+    state.accounts = (savedAccounts && savedAccounts.length) ? savedAccounts : [...DEFAULT_ACCOUNTS];
+
+    const savedPromo = localStorage.getItem(PROMO_KEY);
+    state.promoVisible = savedPromo === null ? true : savedPromo === 'true';
+
+    state.aiProvider = localStorage.getItem(AI_PROVIDER_KEY) || 'google';
+    state.aiApiUrl = localStorage.getItem(AI_URL_KEY) || '';
+    state.aiModel = localStorage.getItem(AI_MODEL_KEY) || 'gemini-3.1-flash-lite';
+    state.aiSessions = JSON.parse(localStorage.getItem('koshelek_ai_sessions')) || [];
+    state.currentAiSessionId = null;
+    state.syncQueue = JSON.parse(localStorage.getItem('koshelek_sync_queue')) || [];
+  } catch {
+    state.categories = { expense: [...DEFAULT_CATEGORIES.expense], income: [...DEFAULT_CATEGORIES.income] };
+    state.accounts = [...DEFAULT_ACCOUNTS];
+    state.balanceAdjustment = 0;
+    state.transactions = buildRefDataTxs();
+  }
+}
+
+function saveData() {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify({
+    transactions: state.transactions,
+    categories: state.categories,
+    balanceAdjustment: state.balanceAdjustment || 0
+  }));
+  localStorage.setItem(ACCOUNTS_KEY, JSON.stringify(state.accounts));
+}
+
+/* ===== УТИЛИТЫ И БЕЗОПАСНЫЙ КАЛЬКУЛЯТОР ===== */
+function uid() {
+  return Date.now().toString(36) + Math.random().toString(36).slice(2);
+}
+
+function escapeHtml(str) {
+  return String(str ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function fmt(amount) {
+  const num = Number(amount) || 0;
+  return new Intl.NumberFormat('ru-RU', {
+    style: 'currency',
+    currency: 'RUB',
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  }).format(num);
+}
+
+function fmtDate(iso) {
+  if (!iso) return '';
+  const d = new Date(iso + 'T00:00:00');
+  return d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short', year: 'numeric' });
+}
+
+function monthName(m) {
+  return new Date(2000, m, 1).toLocaleDateString('ru-RU', { month: 'long' });
+}
+
+function getCat(type, id) {
+  const bucket = state.categories[type] || [...state.categories.expense, ...state.categories.income];
+  return bucket.find(c => c.id === id)
+    || [...state.categories.expense, ...state.categories.income].find(c => c.id === id)
+    || { id, name: id || 'Категория', color: '#F5BD7A' };
+}
+
+function getAccountName(accId) {
+  const acc = (state.accounts || []).find(a => a.id === accId);
+  return acc ? acc.name : 'По умолчанию';
+}
+
+function extractIcon(name) {
+  if (!name) return null;
+  const match = name.match(/^\p{Emoji}/u);
+  return match ? match[0] : null;
+}
+
+function showToast(msg, undoCallback) {
+  let t = document.querySelector('.toast');
+  if (!t) {
+    t = document.createElement('div');
+    t.className = 'toast';
+    if (typeof t.showPopover === 'function') {
+      t.setAttribute('popover', 'manual');
+    }
+  }
+
+  const activeDialogs = document.querySelectorAll('dialog[open]');
+  const topDialog = activeDialogs.length > 0 ? activeDialogs[activeDialogs.length - 1] : null;
+  if (topDialog && t.parentNode !== topDialog) {
+    topDialog.appendChild(t);
+  } else if (!topDialog && t.parentNode !== document.body) {
+    document.body.appendChild(t);
+  }
+
+  clearTimeout(t._timer);
+  const safeMsg = escapeHtml(msg);
+
+  if (undoCallback) {
+    t.innerHTML = `<span class="toast-msg">${safeMsg}</span><button type="button" class="toast-undo">Отменить</button>`;
+    const undoBtn = t.querySelector('.toast-undo');
+    undoBtn.addEventListener('click', () => {
+      undoCallback();
+      hideToast(t);
+    });
+  } else {
+    t.innerHTML = `<span class="toast-msg">${safeMsg}</span>`;
+  }
+
+  if (typeof t.showPopover === 'function') {
+    try {
+      if (t.matches(':popover-open')) t.hidePopover();
+      t.showPopover();
+    } catch {}
+  }
+
+  t.classList.add('show');
+  t._timer = setTimeout(() => hideToast(t), 3500);
+}
+
+function hideToast(t) {
+  if (!t) return;
+  t.classList.remove('show');
+  setTimeout(() => {
+    if (typeof t.hidePopover === 'function' && t.matches(':popover-open')) {
+      try { t.hidePopover(); } catch {}
+    }
+  }, 300);
+}
+
+/* Безопасный рекурсивный парсер математических выражений (без eval / new Function) */
+function safeEval(str) {
+  if (typeof str !== 'string' && typeof str !== 'number') return NaN;
+  const rawStr = String(str).trim();
+  if (!rawStr || /[^0-9+\-*/().,\s]/.test(rawStr)) return NaN;
+  const clean = rawStr.replace(/,/g, '.').replace(/\s+/g, '');
+  if (!clean) return NaN;
+
+  let pos = 0;
+
+  function parseExpression() {
+    let val = parseTerm();
+    while (pos < clean.length && (clean[pos] === '+' || clean[pos] === '-')) {
+      const op = clean[pos++];
+      const right = parseTerm();
+      val = op === '+' ? val + right : val - right;
+    }
+    return val;
+  }
+
+  function parseTerm() {
+    let val = parseFactor();
+    while (pos < clean.length && (clean[pos] === '*' || clean[pos] === '/')) {
+      const op = clean[pos++];
+      const right = parseFactor();
+      if (op === '/' && right === 0) return NaN;
+      val = op === '*' ? val * right : val / right;
+    }
+    return val;
+  }
+
+  function parseFactor() {
+    if (clean[pos] === '+') { pos++; return parseFactor(); }
+    if (clean[pos] === '-') { pos++; return -parseFactor(); }
+    if (clean[pos] === '(') {
+      pos++;
+      const val = parseExpression();
+      if (clean[pos] === ')') pos++;
+      return val;
+    }
+    const start = pos;
+    while (pos < clean.length && ((clean[pos] >= '0' && clean[pos] <= '9') || clean[pos] === '.')) {
+      pos++;
+    }
+    if (start === pos) return NaN;
+    return parseFloat(clean.slice(start, pos));
+  }
+
+  try {
+    const result = parseExpression();
+    if (pos < clean.length) return NaN;
+    return typeof result === 'number' && isFinite(result) ? Math.round(result * 100) / 100 : NaN;
+  } catch {
+    return NaN;
+  }
+}
+
+/* ===== ПЕРИОД И ФИЛЬТРАЦИЯ ПО МЕСЯЦУ ===== */
+function getPeriodRange() {
+  if (state.periodScope === 'all') {
+    return { from: '0000-01-01', to: '9999-12-31' };
+  }
+  const y = state.selectedYear;
+  const m = state.selectedMonth;
+  const from = `${y}-${String(m + 1).padStart(2, '0')}-01`;
+  const lastDay = new Date(y, m + 1, 0).getDate();
+  const to = `${y}-${String(m + 1).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+  return { from, to };
+}
+
+function getPeriodTransactions() {
+  const { from, to } = getPeriodRange();
+  return state.transactions.filter(tx => tx.date >= from && tx.date <= to);
+}
+
+function updateMonthHeaderUI() {
+  const labelEl = document.getElementById('activeMonthLabel');
+  const titleBtn = document.getElementById('monthTitleBtn');
+  if (!labelEl) return;
+
+  if (state.periodScope === 'all') {
+    labelEl.textContent = 'ВСЕ ПЕРИОДЫ';
+    if (titleBtn) titleBtn.classList.add('all-time');
+  } else {
+    const d = new Date(state.selectedYear, state.selectedMonth, 1);
+    const mName = d.toLocaleDateString('ru-RU', { month: 'long' }).toUpperCase();
+    labelEl.textContent = `${mName} ${state.selectedYear} Г.`;
+    if (titleBtn) titleBtn.classList.remove('all-time');
+  }
+}
+
+function shiftMonth(delta) {
+  state.periodScope = 'month';
+  let m = state.selectedMonth + delta;
+  let y = state.selectedYear;
+  if (m < 0) { m = 11; y--; }
+  if (m > 11) { m = 0; y++; }
+  state.selectedMonth = m;
+  state.selectedYear = y;
+  render();
+}
+
+function getFiltered() {
+  const { activeTab, filters } = state;
+  let list = [...state.transactions];
+
+  if (activeTab === 'expense' || activeTab === 'income') {
+    list = list.filter(tx => tx.type === activeTab);
+  }
+
+  // Если не заданы кастомные даты в фильтре — используем выбранный месяц в шапке
+  if (!filters.dateFrom && !filters.dateTo && state.periodScope === 'month') {
+    const { from, to } = getPeriodRange();
+    list = list.filter(tx => tx.date >= from && tx.date <= to);
+  }
+
+  if (filters.search) {
+    const q = filters.search.toLowerCase();
+    list = list.filter(tx => {
+      const cat = getCat(tx.type, tx.categoryId);
+      return cat.name.toLowerCase().includes(q) || (tx.comment || '').toLowerCase().includes(q);
+    });
+  }
+  if (filters.category && filters.category !== 'all') {
+    list = list.filter(tx => tx.categoryId === filters.category);
+  }
+  if (filters.dateFrom) list = list.filter(tx => tx.date >= filters.dateFrom);
+  if (filters.dateTo) list = list.filter(tx => tx.date <= filters.dateTo);
+  if (filters.amountMin !== '') list = list.filter(tx => tx.amount >= parseFloat(filters.amountMin));
+  if (filters.amountMax !== '') list = list.filter(tx => tx.amount <= parseFloat(filters.amountMax));
+
+  const s = filters.sort;
+  list.sort((a, b) => {
+    if (s === 'date_desc') return b.date.localeCompare(a.date);
+    if (s === 'date_asc') return a.date.localeCompare(b.date);
+    if (s === 'amount_desc') return b.amount - a.amount;
+    if (s === 'amount_asc') return a.amount - b.amount;
+    if (s === 'category_asc') return getCat(a.type, a.categoryId).name.localeCompare(getCat(b.type, b.categoryId).name, 'ru');
+    return 0;
+  });
+  return list;
+}
+
+/* ===== РЕНДЕР БАЛАНСА, ГЛАВНОЙ СТРАНИЦЫ (ДОМОЙ) И СЧЕТОВ ===== */
+function renderBalance() {
+  const allIncome = state.transactions.filter(t => t.type === 'income').reduce((s, t) => s + t.amount, 0);
+  const allExpense = state.transactions.filter(t => t.type === 'expense').reduce((s, t) => s + t.amount, 0);
+  const adj = state.balanceAdjustment || 0;
+  const initialAccSum = (state.accounts || []).reduce((s, a) => s + (parseFloat(a.initialBalance) || 0), 0);
+  const totalNet = allIncome - allExpense + adj + initialAccSum;
+
+  const netEl = document.getElementById('netBalance');
+  const netDetailEl = document.getElementById('netBalanceDetail');
+  const totIncEl = document.getElementById('totalIncome');
+  const totExpEl = document.getElementById('totalExpense');
+  if (netEl) netEl.textContent = fmt(totalNet);
+  if (netDetailEl) netDetailEl.textContent = fmt(totalNet);
+  if (totIncEl) totIncEl.textContent = fmt(allIncome);
+  if (totExpEl) totExpEl.textContent = fmt(allExpense);
+
+  const adjRow = document.getElementById('balanceAdjustmentRow');
+  const adjVal = document.getElementById('balanceAdjustmentVal');
+  if (adjRow && adjVal) {
+    if (adj !== 0) {
+      adjRow.style.display = 'flex';
+      adjVal.textContent = (adj >= 0 ? '+' : '') + fmt(adj);
+    } else {
+      adjRow.style.display = 'none';
+    }
+  }
+
+  const btn = document.getElementById('balanceToggle');
+  if (btn) btn.dataset.sign = totalNet >= 0 ? 'pos' : 'neg';
+
+  // Сводка на вкладке «Домой» за выбранный период
+  const periodTxs = getPeriodTransactions();
+  const pIncome = periodTxs.filter(t => t.type === 'income').reduce((s, t) => s + t.amount, 0);
+  const pExpense = periodTxs.filter(t => t.type === 'expense').reduce((s, t) => s + t.amount, 0);
+  const pBalance = pIncome - pExpense + (state.periodScope === 'all' ? adj : 0);
+
+  const homeBal = document.getElementById('homeBalanceVal');
+  const homeInc = document.getElementById('homeIncomeVal');
+  const homeExp = document.getElementById('homeExpenseVal');
+  if (homeBal) homeBal.textContent = fmt(pBalance);
+  if (homeInc) homeInc.textContent = fmt(pIncome);
+  if (homeExp) homeExp.textContent = fmt(pExpense);
+}
+
+function renderHome() {
+  const promoEl = document.getElementById('promoBanner');
+  if (promoEl) promoEl.hidden = !state.promoVisible;
+
+  const periodTxs = getPeriodTransactions();
+
+  // 1. Блок Доход на Главной
+  const incomeTxs = periodTxs.filter(t => t.type === 'income');
+  const incEmpty = document.getElementById('homeIncomeEmpty');
+  const incList = document.getElementById('homeIncomeList');
+
+  if (incEmpty && incList) {
+    if (!incomeTxs.length) {
+      incEmpty.hidden = false;
+      incList.hidden = true;
+      incList.innerHTML = '';
+    } else {
+      incEmpty.hidden = true;
+      incList.hidden = false;
+      incList.innerHTML = buildCategorySummaryRowsHTML(incomeTxs, 'income');
+      bindCategoryRowClicks(incList, 'income');
+    }
+  }
+
+  // 2. Блок Расходы на Главной
+  const expenseTxs = periodTxs.filter(t => t.type === 'expense');
+  const expEmpty = document.getElementById('homeExpenseEmpty');
+  const expList = document.getElementById('homeExpenseList');
+
+  if (expEmpty && expList) {
+    if (!expenseTxs.length) {
+      expEmpty.hidden = false;
+      expList.hidden = true;
+      expList.innerHTML = '';
+    } else {
+      expEmpty.hidden = true;
+      expList.hidden = false;
+      expList.innerHTML = buildCategorySummaryRowsHTML(expenseTxs, 'expense');
+      bindCategoryRowClicks(expList, 'expense');
+    }
+  }
+}
+
+function buildCategorySummaryRowsHTML(txs, type) {
+  const totals = {};
+  txs.forEach(tx => {
+    totals[tx.categoryId] = (totals[tx.categoryId] || 0) + tx.amount;
+  });
+
+  const sorted = Object.entries(totals).sort((a, b) => b[1] - a[1]);
+  return sorted.map(([catId, sum]) => {
+    const cat = getCat(type, catId);
+    const title = escapeHtml(cleanCatTitle(cat.name));
+    return `<li class="ref-cat-row" data-cat-id="${escapeHtml(catId)}" data-type="${type}">
+      <div class="ref-cat-left">
+        ${renderCatBadgeHTML(cat)}
+        <span class="ref-cat-name">${title}</span>
+      </div>
+      <span class="ref-cat-amount">${fmt(sum)}</span>
+    </li>`;
+  }).join('');
+}
+
+function bindCategoryRowClicks(container, type) {
+  container.querySelectorAll('.ref-cat-row').forEach(row => {
+    row.addEventListener('click', () => {
+      state.activeTab = type;
+      state.filters.category = row.dataset.catId;
+      switchNavTab('transactions');
+    });
+  });
+}
+
+/* ===== РЕНДЕР ВКЛАДКИ СЧЕТА (РЕФЕРЕНС 6) ===== */
+function renderAccounts() {
+  const container = document.getElementById('accountsListContainer');
+  const netWorthEl = document.getElementById('accountsNetWorthVal');
+  if (!container) return;
+
+  if (!state.accounts || !state.accounts.length) {
+    state.accounts = [...DEFAULT_ACCOUNTS];
+  }
+
+  let totalNetWorth = state.balanceAdjustment || 0;
+
+  const cardsHtml = state.accounts.map(acc => {
+    const accTxs = state.transactions.filter(t => (t.accountId || 'default') === acc.id);
+    const inc = accTxs.filter(t => t.type === 'income').reduce((s, t) => s + t.amount, 0);
+    const exp = accTxs.filter(t => t.type === 'expense').reduce((s, t) => s + t.amount, 0);
+    const adjPart = acc.id === 'default' ? (state.balanceAdjustment || 0) : 0;
+    const bal = (parseFloat(acc.initialBalance) || 0) + inc - exp + adjPart;
+    if (acc.id !== 'default') {
+      totalNetWorth += (parseFloat(acc.initialBalance) || 0) + inc - exp;
+    } else {
+      totalNetWorth += (parseFloat(acc.initialBalance) || 0) + inc - exp;
+    }
+
+    return `<div class="account-dashed-card" data-acc-id="${escapeHtml(acc.id)}">
+      <span class="account-card-name">${escapeHtml(acc.name)}</span>
+      <div class="account-card-right">
+        <span class="account-card-bal">${fmt(bal)}</span>
+        ${acc.id !== 'default' ? `<button type="button" class="account-del-btn" data-del-acc="${escapeHtml(acc.id)}" title="Удалить счет">×</button>` : ''}
+      </div>
+    </div>`;
+  }).join('');
+
+  if (netWorthEl) netWorthEl.textContent = fmt(totalNetWorth);
+  container.innerHTML = cardsHtml;
+
+  container.querySelectorAll('.account-del-btn').forEach(btn => {
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      const id = btn.dataset.delAcc;
+      if (!confirm('Удалить этот счет? Транзакции по нему перейдут на счет «По умолчанию».')) return;
+      state.transactions.forEach(tx => {
+        if (tx.accountId === id) tx.accountId = 'default';
+      });
+      state.accounts = state.accounts.filter(a => a.id !== id);
+      saveData();
+      render();
+      showToast('Счет удален');
+    });
+  });
+}
+
+/* ===== ЧИПЫ КАТЕГОРИЙ И СПИСОК ТРАНЗАКЦИЙ (РЕФЕРЕНС 5) ===== */
+function renderCategoryTotals(list) {
+  const section = document.getElementById('categoryTotals');
+  if (!section) return;
+
+  const totals = {};
+  const typesForTotals = {};
+  list.forEach(tx => {
+    totals[tx.categoryId] = (totals[tx.categoryId] || 0) + tx.amount;
+    typesForTotals[tx.categoryId] = tx.type;
+  });
+
+  const allCats = [...state.categories.expense, ...state.categories.income];
+  const seen = new Set();
+  const chips = [];
+
+  allCats.forEach(c => {
+    if (!totals[c.id] || seen.has(c.id)) return;
+    seen.add(c.id);
+    const chip = document.createElement('button');
+    chip.type = 'button';
+    chip.className = 'cat-chip' + (state.filters.category === c.id ? ' active' : '');
+    chip.style.setProperty('--cat-color', c.color);
+    chip.innerHTML = `<span class="cat-chip-dot" style="background:${escapeHtml(c.color)}"></span>${escapeHtml(cleanCatTitle(c.name))}<span class="cat-chip-amount">${fmt(totals[c.id])}</span>`;
+    chip.addEventListener('click', () => {
+      state.filters.category = state.filters.category === c.id ? 'all' : c.id;
+      const sel = document.getElementById('categoryFilter');
+      if (sel) sel.value = state.filters.category;
+      render();
+    });
+    chips.push(chip);
+  });
+
+  section.replaceChildren(...chips);
+}
+
+const BLOB_COLORS = ['blob-pink', 'blob-peach', 'blob-mint', 'blob-lavender'];
+
+function renderList(list) {
+  const ul = document.getElementById('transactionList');
+  const empty = document.getElementById('emptyState');
+  if (!ul || !empty) return;
+
+  if (!list.length) {
+    ul.replaceChildren();
+    empty.classList.add('visible');
+    return;
+  }
+  empty.classList.remove('visible');
+
+  // Режим 1: Группировка по дням (по умолчанию, точно как на Референсе 5)
+  if (state.txGroupingMode === 'day') {
+    const dayGroups = {};
+    list.forEach(tx => {
+      if (!dayGroups[tx.date]) dayGroups[tx.date] = [];
+      dayGroups[tx.date].push(tx);
+    });
+
+    const dates = Object.keys(dayGroups);
+    if (state.filters.sort === 'date_asc') {
+      dates.sort((a, b) => a.localeCompare(b));
+    } else if (state.filters.sort === 'date_desc') {
+      dates.sort((a, b) => b.localeCompare(a));
+    }
+
+    const frag = document.createDocumentFragment();
+    dates.forEach((isoDate, dIdx) => {
+      const d = new Date(isoDate + 'T00:00:00');
+      const dayNum = d.getDate();
+      const weekday = d.toLocaleDateString('ru-RU', { weekday: 'long' }).toLowerCase();
+      const blobClass = BLOB_COLORS[dIdx % BLOB_COLORS.length];
+
+      const dayLi = document.createElement('li');
+      dayLi.className = 'day-group-li';
+      dayLi.innerHTML = `
+        <div class="day-group-header">
+          <div class="day-watercolor-blob ${blobClass}">${dayNum}</div>
+          <span class="day-weekday-script">${escapeHtml(weekday)}</span>
+        </div>
+      `;
+
+      dayGroups[isoDate].forEach(tx => {
+        dayLi.appendChild(createTxItemElement(tx));
+      });
+
+      frag.appendChild(dayLi);
+    });
+
+    ul.replaceChildren(frag);
+    return;
+  }
+
+  // Режим 2: Группировка по годам и месяцам (переключается иконкой календаря)
+  const groups = {};
+  list.forEach(tx => {
+    const d = new Date(tx.date + 'T00:00:00');
+    const y = d.getFullYear(), m = d.getMonth();
+    if (!groups[y]) groups[y] = {};
+    if (!groups[y][m]) groups[y][m] = [];
+    groups[y][m].push(tx);
+  });
+
+  const frag = document.createDocumentFragment();
+  const years = Object.keys(groups).sort((a, b) => b - a);
+
+  years.forEach(y => {
+    const yearSum = Object.values(groups[y]).flat().reduce((s, t) => s + (t.type === 'expense' ? -t.amount : t.amount), 0);
+    const yearCollapsed = state.collapsedYears.has(y);
+    const yEl = document.createElement('li');
+    yEl.className = 'group-year-li';
+    yEl.innerHTML = `<div class="group-year" data-year="${y}">
+      <span>${yearCollapsed ? '▸' : '▾'} ${y} год</span>
+      <span>${fmt(yearSum)}</span>
+    </div>`;
+    frag.appendChild(yEl);
+
+    if (yearCollapsed) return;
+
+    const months = Object.keys(groups[y]).sort((a, b) => b - a);
+    months.forEach(m => {
+      const monthKey = `${y}-${m}`;
+      const txs = groups[y][m];
+      const sum = txs.reduce((s, t) => s + (t.type === 'expense' ? -t.amount : t.amount), 0);
+      const monthCollapsed = state.collapsedMonths.has(monthKey);
+      const mEl = document.createElement('li');
+      mEl.className = 'group-month-li';
+      mEl.innerHTML = `<div class="group-month" data-month="${monthKey}">
+        <span>${monthCollapsed ? '▸' : '▾'} ${monthName(parseInt(m))}</span>
+        <span>${fmt(sum)}</span>
+      </div>`;
+      frag.appendChild(mEl);
+
+      if (monthCollapsed) return;
+      txs.forEach(tx => frag.appendChild(createTxItemElement(tx)));
+    });
+  });
+
+  ul.replaceChildren(frag);
+
+  ul.querySelectorAll('.group-year[data-year]').forEach(el => {
+    el.addEventListener('click', () => {
+      const y = el.dataset.year;
+      if (state.collapsedYears.has(y)) state.collapsedYears.delete(y);
+      else state.collapsedYears.add(y);
+      renderList(list);
+    });
+  });
+  ul.querySelectorAll('.group-month[data-month]').forEach(el => {
+    el.addEventListener('click', () => {
+      const key = el.dataset.month;
+      if (state.collapsedMonths.has(key)) state.collapsedMonths.delete(key);
+      else state.collapsedMonths.add(key);
+      renderList(list);
+    });
+  });
+}
+
+function createTxItemElement(tx) {
+  const cat = getCat(tx.type, tx.categoryId);
+  const displayName = escapeHtml(cleanCatTitle(cat.name));
+  const accName = escapeHtml(getAccountName(tx.accountId || 'default'));
+  const isPaid = tx.paid !== false;
+  const sign = tx.type === 'expense' ? '-' : '+';
+
+  const li = document.createElement('li');
+  li.className = `tx-item ${tx.type}`;
+  li.dataset.id = tx.id;
+  li.innerHTML = `
+    <div class="tx-item-main">
+      <div class="tx-left">
+        ${renderCatBadgeHTML(cat)}
+        <div class="tx-body">
+          <div class="tx-cat">${displayName}</div>
+          <div class="tx-account-sub">${accName}</div>
+        </div>
+      </div>
+      <div class="tx-right">
+        <div class="tx-amount">${sign}${fmt(tx.amount)}</div>
+        <button type="button" class="tx-paid-indicator ${isPaid ? 'paid' : 'unpaid'}" data-toggle-paid="${escapeHtml(tx.id)}" title="${isPaid ? 'Оплачено' : 'Не оплачено'}">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+        </button>
+      </div>
+    </div>
+    ${tx.comment ? `<div class="tx-comment-below">${escapeHtml(tx.comment)}</div>` : ''}
+    <div class="tx-actions">
+      <button type="button" class="tx-btn template-add" title="Сохранить как шаблон" data-id="${escapeHtml(tx.id)}"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg></button>
+      <button type="button" class="tx-btn edit" title="Редактировать" data-id="${escapeHtml(tx.id)}"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg></button>
+      <button type="button" class="tx-btn del" title="Удалить" data-id="${escapeHtml(tx.id)}"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg></button>
+    </div>
+  `;
+  return li;
+}
+
+/* ===== СЕЛЕКТЫ КАТЕГОРИЙ И СЧЕТОВ ===== */
+function renderCategoryFilter() {
+  const sel = document.getElementById('categoryFilter');
+  if (!sel) return;
+  const cats = state.activeTab === 'income'
+    ? state.categories.income
+    : state.activeTab === 'expense'
+      ? state.categories.expense
+      : [...state.categories.expense, ...state.categories.income];
+
+  sel.innerHTML = '<option value="all">Все категории</option>' +
+    cats.map(c => `<option value="${escapeHtml(c.id)}">${escapeHtml(c.name)}</option>`).join('');
+  sel.value = state.filters.category || 'all';
+}
+
+function renderCategoryList() {
+  const ul = document.getElementById('categoryList');
+  if (!ul) return;
+  const tab = state.catDialogTab || 'expense';
+  const cats = state.categories[tab] || [];
+
+  document.querySelectorAll('.cat-type-tab').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.catTab === tab);
+  });
+
+  ul.innerHTML = cats.map(c => {
+    return `<li class="cat-item" style="--cat-color:${escapeHtml(c.color)}">
+      <span class="cat-item-swatch" style="background:${escapeHtml(c.color)}"></span>
+      <span class="cat-item-name">${escapeHtml(c.name)}</span>
+      <button type="button" class="cat-item-edit" data-id="${escapeHtml(c.id)}" title="Редактировать"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg></button>
+      <button type="button" class="cat-item-del" data-id="${escapeHtml(c.id)}" title="Удалить"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button>
+    </li>`;
+  }).join('');
+}
+
+function renderTxCategorySelect() {
+  const sel = document.getElementById('txCategory');
+  if (!sel) return;
+  const mode = state.txModalMode === 'income' ? 'income' : 'expense';
+  const cats = state.categories[mode] || [];
+  sel.innerHTML = cats.map(c => `<option value="${escapeHtml(c.id)}">${escapeHtml(cleanCatTitle(c.name))}</option>`).join('');
+}
+
+function renderAccountSelects() {
+  const accSel = document.getElementById('txAccount');
+  const targetSel = document.getElementById('txTargetAccount');
+  const opts = (state.accounts || DEFAULT_ACCOUNTS)
+    .map(a => `<option value="${escapeHtml(a.id)}">${escapeHtml(a.name)}</option>`)
+    .join('');
+  if (accSel) accSel.innerHTML = opts;
+  if (targetSel) targetSel.innerHTML = opts;
+}
+
+/* ===== ГЛАВНЫЙ РЕНДЕР И ПЕРЕКЛЮЧЕНИЕ ВКЛАДОК ===== */
+function render() {
+  updateMonthHeaderUI();
+  renderBalance();
+  renderHome();
+  renderAccounts();
+  renderCategoryFilter();
+  const list = getFiltered();
+  renderCategoryTotals(list);
+  renderTemplates();
+  renderList(list);
+  if (state.activeNav === 'analytics') {
+    renderDashCategoryFilter();
+    renderDashboard();
+  }
+}
+
+function switchNavTab(navName) {
+  state.activeNav = navName;
+  state.viewMode = navName === 'analytics' ? 'dashboard' : 'list';
+
+  const sections = {
+    home: document.getElementById('homeSection'),
+    analytics: document.getElementById('analyticsSection'),
+    transactions: document.getElementById('listSection'),
+    accounts: document.getElementById('accountsSection'),
+    guide: document.getElementById('guideSection')
+  };
+
+  Object.entries(sections).forEach(([key, el]) => {
+    if (el) el.hidden = (key !== navName);
+  });
+
+  document.querySelectorAll('.nav-item').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.nav === navName);
+  });
+
+  // Адаптация верхней шапки под активный экран (как на референсах)
+  const monthNavBar = document.getElementById('monthNavBar');
+  const staticPageTitle = document.getElementById('staticPageTitle');
+  const triangleIcon = document.getElementById('topLeftTriangleIcon');
+  const calendarIcon = document.getElementById('topLeftCalendarIcon');
+  const txTopActions = document.getElementById('txTopActions');
+  const settingsBtn = document.getElementById('settingsBtn');
+  const fabHeartBtn = document.getElementById('fabHeartBtn');
+  const floatingWrap = document.getElementById('floatingActionsWrap');
+
+  if (navName === 'accounts') {
+    if (monthNavBar) monthNavBar.hidden = true;
+    if (staticPageTitle) {
+      staticPageTitle.hidden = false;
+      staticPageTitle.textContent = 'СЧЕТА';
+    }
+    if (floatingWrap) floatingWrap.hidden = true;
+  } else if (navName === 'guide') {
+    if (monthNavBar) monthNavBar.hidden = true;
+    if (staticPageTitle) {
+      staticPageTitle.hidden = false;
+      staticPageTitle.textContent = 'РУКОВОДСТВО';
+    }
+    if (floatingWrap) floatingWrap.hidden = false;
+  } else {
+    if (monthNavBar) monthNavBar.hidden = false;
+    if (staticPageTitle) staticPageTitle.hidden = true;
+    if (floatingWrap) floatingWrap.hidden = false;
+  }
+
+  if (triangleIcon) triangleIcon.hidden = (navName === 'transactions');
+  if (calendarIcon) calendarIcon.hidden = (navName !== 'transactions');
+  if (txTopActions) txTopActions.hidden = (navName !== 'transactions');
+  if (settingsBtn) settingsBtn.hidden = (navName === 'transactions');
+  if (fabHeartBtn) fabHeartBtn.hidden = (navName !== 'home');
+
+  render();
+}
+
+/* ===== МОДАЛЬНОЕ ОКНО ТРАНЗАКЦИИ + ЦИФРОВАЯ КЛАВИАТУРА (РЕФЕРЕНС 3) ===== */
+function setTxModalMode(mode) {
+  state.txModalMode = mode; // 'expense' | 'income' | 'transfer'
+  document.querySelectorAll('.tx-mode-pill').forEach(btn => {
+    const m = btn.dataset.txMode;
+    btn.classList.remove('active-expense', 'active-income', 'active-transfer');
+    if (m === mode) {
+      btn.classList.add(mode === 'income' ? 'active-income' : mode === 'transfer' ? 'active-transfer' : 'active-expense');
+    }
+  });
+
+  const catRow = document.getElementById('txCategoryRow');
+  const targetRow = document.getElementById('txTransferTargetRow');
+  const accLabel = document.getElementById('txAccountRowLabel');
+
+  if (mode === 'transfer') {
+    if (catRow) catRow.hidden = true;
+    if (targetRow) targetRow.hidden = false;
+    if (accLabel) accLabel.textContent = 'Со счета';
+  } else {
+    if (catRow) catRow.hidden = false;
+    if (targetRow) targetRow.hidden = true;
+    if (accLabel) accLabel.textContent = 'Счет';
+    renderTxCategorySelect();
+  }
+}
+
+function updateTxAmountUI() {
+  const input = document.getElementById('txAmount');
+  const bigDisplay = document.getElementById('txAmountFormattedDisplay');
+  const preview = document.getElementById('txAmountPreview');
+  if (!input || !bigDisplay) return;
+
+  const raw = input.value.trim();
+  if (!raw) {
+    bigDisplay.textContent = '0,00 ₽';
+    if (preview) preview.style.display = 'none';
+    return;
+  }
+
+  const hasOps = /[+\-*/()]/.test(raw);
+  const val = safeEval(raw);
+
+  if (hasOps) {
+    bigDisplay.textContent = raw.replace(/\*/g, '×').replace(/\//g, '÷') + ' ₽';
+    if (preview) {
+      if (!isNaN(val) && val > 0) {
+        preview.textContent = `= ${fmt(val)}`;
+        preview.style.display = 'block';
+      } else {
+        preview.textContent = 'Введите второе число...';
+        preview.style.display = 'block';
+      }
+    }
+  } else {
+    const num = parseFloat(raw.replace(',', '.'));
+    bigDisplay.textContent = !isNaN(num) ? fmt(num) : '0,00 ₽';
+    if (preview) preview.style.display = 'none';
+  }
+}
+
+function updateTxDateLabel() {
+  const dateInput = document.getElementById('txDate');
+  const label = document.getElementById('txDateHumanLabel');
+  if (!dateInput || !label) return;
+  label.textContent = fmtDate(dateInput.value) || 'Сегодня';
+}
+
+function updateTxPaidButtonUI() {
+  const btn = document.getElementById('txPaidToggleBtn');
+  if (!btn) return;
+  btn.classList.toggle('checked', state.txPaid);
+  btn.setAttribute('aria-checked', state.txPaid ? 'true' : 'false');
+}
+
+function handleKeypadPress(key) {
+  const input = document.getElementById('txAmount');
+  if (!input) return;
+  let cur = input.value;
+
+  if (key === 'C') {
+    cur = '';
+  } else if (key === 'BACKSPACE') {
+    cur = cur.slice(0, -1);
+  } else if (key === '.') {
+    // Разрешаем точку в текущем числе
+    const parts = cur.split(/[+\-*/]/);
+    const lastPart = parts[parts.length - 1] || '';
+    if (!lastPart.includes('.')) {
+      cur = cur ? cur + '.' : '0.';
+    }
+  } else if (['+', '-', '*', '/'].includes(key)) {
+    if (!cur) return;
+    if (/[+\-*/]$/.test(cur)) {
+      cur = cur.slice(0, -1) + key;
+    } else {
+      cur += key;
+    }
+  } else {
+    // Цифра 0-9
+    cur += key;
+  }
+
+  input.value = cur;
+  updateTxAmountUI();
+}
+
+function openAddDialog(forcedMode) {
+  state.editingId = null;
+  const mode = (typeof forcedMode === 'string' && ['expense', 'income', 'transfer'].includes(forcedMode))
+    ? forcedMode
+    : (state.activeTab === 'income' ? 'income' : 'expense');
+
+  document.getElementById('transactionDialogTitle').textContent = 'НОВАЯ ТРАНЗАКЦИЯ';
+  renderAccountSelects();
+  setTxModalMode(mode);
+
+  const amtInput = document.getElementById('txAmount');
+  if (amtInput) amtInput.value = '';
+  updateTxAmountUI();
+
+  const defaultDate = state.periodScope === 'month'
+    ? `${state.selectedYear}-${String(state.selectedMonth + 1).padStart(2, '0')}-${String(Math.min(new Date().getDate(), new Date(state.selectedYear, state.selectedMonth + 1, 0).getDate())).padStart(2, '0')}`
+    : new Date().toISOString().slice(0, 10);
+
+  const dateEl = document.getElementById('txDate');
+  if (dateEl) dateEl.value = defaultDate;
+  updateTxDateLabel();
+
+  state.txPaid = true;
+  updateTxPaidButtonUI();
+
+  const recEl = document.getElementById('txRecurrence');
+  if (recEl) recEl.value = 'none';
+
+  const commentEl = document.getElementById('txComment');
+  if (commentEl) commentEl.value = '';
+
+  document.getElementById('transactionDialog').showModal();
+}
+
+function openEditDialog(id) {
+  const tx = state.transactions.find(t => t.id === id);
+  if (!tx) return;
+  state.editingId = id;
+  document.getElementById('transactionDialogTitle').textContent = 'РЕДАКТИРОВАТЬ';
+  renderAccountSelects();
+  setTxModalMode(tx.type);
+
+  const amtInput = document.getElementById('txAmount');
+  if (amtInput) amtInput.value = String(tx.amount);
+  updateTxAmountUI();
+
+  const catEl = document.getElementById('txCategory');
+  if (catEl) catEl.value = tx.categoryId;
+
+  const dateEl = document.getElementById('txDate');
+  if (dateEl) dateEl.value = tx.date;
+  updateTxDateLabel();
+
+  const accEl = document.getElementById('txAccount');
+  if (accEl) accEl.value = tx.accountId || 'default';
+
+  const recEl = document.getElementById('txRecurrence');
+  if (recEl) recEl.value = tx.recurrence || 'none';
+
+  state.txPaid = tx.paid !== false;
+  updateTxPaidButtonUI();
+
+  const commentEl = document.getElementById('txComment');
+  if (commentEl) commentEl.value = tx.comment || '';
+
+  document.getElementById('transactionDialog').showModal();
+}
+
+function saveTransaction(e) {
+  e.preventDefault();
+  const amountVal = document.getElementById('txAmount').value;
+  const amount = safeEval(amountVal);
+  if (isNaN(amount) || amount <= 0) {
+    showToast('Введите сумму больше нуля');
+    return;
+  }
+
+  const date = document.getElementById('txDate').value || new Date().toISOString().slice(0, 10);
+  const accountId = document.getElementById('txAccount')?.value || 'default';
+  const recurrence = document.getElementById('txRecurrence')?.value || 'none';
+  const comment = document.getElementById('txComment').value.trim();
+  const paid = state.txPaid;
+
+  // Обработка перевода между счетами
+  if (state.txModalMode === 'transfer') {
+    const targetAccId = document.getElementById('txTargetAccount')?.value || 'default';
+    if (targetAccId === accountId) {
+      showToast('Выберите другой счет получателя для перевода');
+      return;
+    }
+    const outTx = {
+      id: uid(),
+      type: 'expense',
+      amount,
+      categoryId: state.categories.expense[0]?.id || 'e7',
+      date,
+      accountId,
+      paid: true,
+      comment: comment || `Перевод → ${getAccountName(targetAccId)}`
+    };
+    const inTx = {
+      id: uid(),
+      type: 'income',
+      amount,
+      categoryId: state.categories.income[0]?.id || 'i5',
+      date,
+      accountId: targetAccId,
+      paid: true,
+      comment: comment || `Перевод ← ${getAccountName(accountId)}`
+    };
+    state.transactions.push(outTx, inTx);
+    saveData();
+    render();
+    document.getElementById('transactionDialog').close();
+    showToast('⇄ Перевод между счетами выполнен');
+    return;
+  }
+
+  const txType = state.txModalMode === 'income' ? 'income' : 'expense';
+  const categoryId = document.getElementById('txCategory').value || state.categories[txType][0]?.id;
+  if (!categoryId) return;
+
+  // Синхронизируем выбранный месяц с датой новой транзакции, чтобы она сразу отобразилась
+  const txDateObj = new Date(date + 'T00:00:00');
+  if (!isNaN(txDateObj)) {
+    state.selectedYear = txDateObj.getFullYear();
+    state.selectedMonth = txDateObj.getMonth();
+  }
+
+  if (state.editingId) {
+    const idx = state.transactions.findIndex(t => t.id === state.editingId);
+    if (idx !== -1) {
+      const oldTx = { ...state.transactions[idx] };
+      state.transactions[idx] = {
+        ...state.transactions[idx],
+        type: txType,
+        amount,
+        categoryId,
+        date,
+        comment,
+        accountId,
+        paid,
+        recurrence
+      };
+      saveData();
+      render();
+      syncItem('transactions', 'upsert', state.transactions[idx]);
+      showToast('Запись обновлена', () => {
+        state.transactions[idx] = oldTx;
+        saveData();
+        render();
+        syncItem('transactions', 'upsert', oldTx);
+        showToast('Изменение отменено');
+      });
+    }
+  } else {
+    const newTx = { id: uid(), type: txType, amount, categoryId, date, comment, accountId, paid, recurrence };
+    state.transactions.push(newTx);
+    saveData();
+    render();
+    syncItem('transactions', 'upsert', newTx);
+    showToast(txType === 'expense' ? 'Расход добавлен' : 'Доход добавлен', () => {
+      const idx = state.transactions.findIndex(t => t.id === newTx.id);
+      if (idx !== -1) {
+        state.transactions.splice(idx, 1);
+        saveData();
+        render();
+        syncItem('transactions', 'delete', { id: newTx.id });
+        showToast('Добавление отменено');
+      }
+    });
+  }
+
+  document.getElementById('transactionDialog').close();
+}
+
+function deleteTransaction(id) {
+  const idx = state.transactions.findIndex(t => t.id === id);
+  if (idx === -1) return;
+  const deleted = state.transactions[idx];
+  state.transactions.splice(idx, 1);
+  saveData();
+  render();
+  syncItem('transactions', 'delete', { id });
+  showToast('Запись удалена', () => {
+    state.transactions.push(deleted);
+    saveData();
+    render();
+    syncItem('transactions', 'upsert', deleted);
+    showToast('Действие отменено');
+  });
+}
+
+function toggleTransactionPaid(id) {
+  const tx = state.transactions.find(t => t.id === id);
+  if (!tx) return;
+  tx.paid = tx.paid === false ? true : false;
+  saveData();
+  render();
+  showToast(tx.paid ? '✓ Отмечено как оплаченное' : '○ Отмечено как неоплаченное');
+}
+
+/* ===== ДИАЛОГ КАТЕГОРИЙ ===== */
+function openCategoryDialog(defaultType) {
+  if (typeof defaultType === 'string' && (defaultType === 'expense' || defaultType === 'income')) {
+    state.catDialogTab = defaultType;
+  } else {
+    state.catDialogTab = state.activeTab === 'income' ? 'income' : 'expense';
+  }
+  renderCategoryList();
+  document.getElementById('categoryName').value = '';
+  document.getElementById('categoryColor').value = '#F5BD7A';
+  document.getElementById('categoryDialog').showModal();
+}
+
+function addCategory(e) {
+  e.preventDefault();
+  const tab = state.catDialogTab || 'expense';
+  const name = document.getElementById('categoryName').value.trim();
+  const color = document.getElementById('categoryColor').value;
+  if (!name) return;
+  const newCat = { id: uid(), name, color, type: tab };
+  state.categories[tab].push(newCat);
+  saveData();
+  renderCategoryList();
+  renderCategoryFilter();
+  renderTxCategorySelect();
+  render();
+  syncItem('categories', 'upsert', newCat);
+  document.getElementById('categoryName').value = '';
+  showToast('Категория добавлена');
+}
+
+function deleteCategory(id) {
+  const tab = state.catDialogTab || 'expense';
+  const used = state.transactions.some(t => t.categoryId === id);
+  if (used) {
+    showToast('Нельзя удалить: есть транзакции в этой категории');
+    return;
+  }
+  state.categories[tab] = state.categories[tab].filter(c => c.id !== id);
+  saveData();
+  renderCategoryList();
+  renderCategoryFilter();
+  renderTxCategorySelect();
+  render();
+  syncItem('categories', 'delete', { id });
+  showToast('Категория удалена');
+}
+
+function openEditCategoryDialog(id) {
+  const tab = state.catDialogTab || 'expense';
+  const cat = state.categories[tab].find(c => c.id === id);
+  if (!cat) return;
+  document.getElementById('editCategoryId').value = id;
+  document.getElementById('editCategoryName').value = cat.name;
+  document.getElementById('editCategoryColor').value = cat.color;
+  document.getElementById('editCategoryDialog').showModal();
+}
+
+function saveEditCategory(e) {
+  e.preventDefault();
+  const tab = state.catDialogTab || 'expense';
+  const id = document.getElementById('editCategoryId').value;
+  const name = document.getElementById('editCategoryName').value.trim();
+  const color = document.getElementById('editCategoryColor').value;
+  if (!name) return;
+  const idx = state.categories[tab].findIndex(c => c.id === id);
+  if (idx !== -1) {
+    state.categories[tab][idx] = { ...state.categories[tab][idx], name, color };
+    const updatedCat = { ...state.categories[tab][idx], type: tab };
+    saveData();
+    renderCategoryList();
+    renderCategoryFilter();
+    renderTxCategorySelect();
+    render();
+    syncItem('categories', 'upsert', updatedCat);
+  }
+  document.getElementById('editCategoryDialog').close();
+  document.getElementById('categoryDialog').showModal();
+  showToast('Категория обновлена');
+}
+
+/* ===== ТЕМА (СВЕТЛАЯ БУМАЖНАЯ ПО УМОЛЧАНИЮ / ТЁМНАЯ) ===== */
+function initTheme() {
+  const saved = localStorage.getItem(THEME_KEY) || 'light';
+  document.documentElement.dataset.theme = saved === 'dark' ? 'dark' : 'light';
+  updateThemeToggle();
+}
+
+function toggleTheme() {
+  const isDark = document.documentElement.dataset.theme === 'dark';
+  const next = isDark ? 'light' : 'dark';
+  document.documentElement.dataset.theme = next;
+  localStorage.setItem(THEME_KEY, next);
+  updateThemeToggle();
+}
+
+function updateThemeToggle() {
+  const btn = document.getElementById('themeToggle');
+  if (!btn) return;
+  const isDark = document.documentElement.dataset.theme === 'dark';
+  btn.setAttribute('aria-checked', isDark ? 'true' : 'false');
+  btn.classList.toggle('on', isDark);
+
+  const promoBtn = document.getElementById('promoToggleBtn');
+  if (promoBtn) {
+    promoBtn.setAttribute('aria-checked', state.promoVisible ? 'true' : 'false');
+    promoBtn.classList.toggle('on', state.promoVisible);
+  }
+}
+
+/* ===== CSV ЭКСПОРТ И ИМПОРТ ===== */
+function exportCSV() {
+  const allCats = [...state.categories.expense, ...state.categories.income];
+  const getCatName = (type, id) => {
+    const c = allCats.find(c => c.id === id);
+    return c ? c.name : id;
+  };
+
+  const header = ['ID операции', 'Тип', 'Сумма', 'ID категории', 'Категория', 'Дата', 'Комментарий'];
+  const rows = state.transactions.map(tx => [
+    tx.id,
+    tx.type === 'income' ? 'Доход' : 'Расход',
+    tx.amount,
+    tx.categoryId,
+    `"${(getCatName(tx.type, tx.categoryId) || '').replace(/"/g, '""')}"`,
+    tx.date,
+    `"${(tx.comment || '').replace(/"/g, '""')}"`
+  ]);
+
+  const catHeader = ['ID категории', 'Тип категории', 'Название категории', 'Цвет'];
+  const catRows = [
+    ...state.categories.expense.map(c => [c.id, 'Расход', `"${c.name.replace(/"/g, '""')}"`, c.color]),
+    ...state.categories.income.map(c => [c.id, 'Доход', `"${c.name.replace(/"/g, '""')}"`, c.color])
+  ];
+
+  const csv = [
+    [header].concat(rows).map(r => r.join(',')).join('\n'),
+    '',
+    '# CATEGORIES',
+    [catHeader].concat(catRows).map(r => r.join(',')).join('\n')
+  ].join('\n');
+
+  const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `koshelek_${new Date().toISOString().slice(0, 10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+  showToast('CSV экспортирован');
+}
+
+const CSV_HEADER_MAP = {
+  'id': 'id', 'ID операции': 'id', 'ID': 'id',
+  'type': 'type', 'Тип': 'type', 'Тип операции': 'type',
+  'amount': 'amount', 'Сумма': 'amount',
+  'categoryId': 'categoryId', 'ID категории': 'categoryId',
+  'categoryName': 'categoryName', 'Категория': 'categoryName',
+  'date': 'date', 'Дата': 'date',
+  'comment': 'comment', 'Комментарий': 'comment'
+};
+
+const CSV_CAT_HEADER_MAP = {
+  'cat_id': 'cat_id', 'ID категории': 'cat_id',
+  'cat_type': 'cat_type', 'Тип категории': 'cat_type',
+  'cat_name': 'cat_name', 'Название категории': 'cat_name',
+  'cat_color': 'cat_color', 'Цвет': 'cat_color'
+};
+
+function parseCSVLine(line) {
+  const result = [];
+  let cur = '', inQuotes = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (ch === '"') {
+      if (inQuotes && line[i + 1] === '"') { cur += '"'; i++; }
+      else inQuotes = !inQuotes;
+    } else if (ch === ',' && !inQuotes) {
+      result.push(cur); cur = '';
+    } else {
+      cur += ch;
+    }
+  }
+  result.push(cur);
+  return result;
+}
+
+function importCSV(file) {
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const text = e.target.result.replace(/^\uFEFF/, '');
+      const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+
+      let mode = 'tx';
+      const newTransactions = [];
+      const newCategories = { expense: [], income: [] };
+      let txHeaders = null;
+      let catHeaders = null;
+
+      for (const line of lines) {
+        if (line.startsWith('# TRANSACTIONS')) { mode = 'tx'; txHeaders = null; continue; }
+        if (line.startsWith('# CATEGORIES')) { mode = 'cat'; catHeaders = null; continue; }
+        if (line.startsWith('#')) continue;
+
+        const cols = parseCSVLine(line);
+        if (mode === 'tx') {
+          if (!txHeaders) {
+            txHeaders = cols.map(c => CSV_HEADER_MAP[c.trim()] || c.trim());
+            continue;
+          }
+          const row = Object.fromEntries(txHeaders.map((h, i) => [h, cols[i] ?? '']));
+          if (row.id && row.type && row.amount && row.date) {
+            newTransactions.push({
+              id: row.id,
+              type: (row.type === 'income' || row.type === 'Доход') ? 'income' : 'expense',
+              amount: parseFloat(row.amount),
+              categoryId: row.categoryId || 'e_prod',
+              date: row.date,
+              comment: row.comment || '',
+              accountId: 'default',
+              paid: true
+            });
+          }
+        } else if (mode === 'cat') {
+          if (!catHeaders) {
+            catHeaders = cols.map(c => CSV_CAT_HEADER_MAP[c.trim()] || c.trim());
+            continue;
+          }
+          const row = Object.fromEntries(catHeaders.map((h, i) => [h, cols[i] ?? '']));
+          if (row.cat_id && row.cat_type && row.cat_name) {
+            const type = (row.cat_type === 'income' || row.cat_type === 'Доход') ? 'income' : 'expense';
+            newCategories[type].push({ id: row.cat_id, name: row.cat_name, color: row.cat_color || '#F5BD7A' });
+          }
+        }
+      }
+
+      if (!newTransactions.length && !newCategories.expense.length && !newCategories.income.length) {
+        showToast('Файл не содержит данных');
+        return;
+      }
+
+      const existingTxIds = new Set(state.transactions.map(t => t.id));
+      let addedTx = 0;
+      newTransactions.forEach(tx => {
+        if (!existingTxIds.has(tx.id)) { state.transactions.push(tx); addedTx++; }
+      });
+
+      ['expense', 'income'].forEach(type => {
+        const existingCatIds = new Set(state.categories[type].map(c => c.id));
+        newCategories[type].forEach(c => {
+          if (!existingCatIds.has(c.id)) state.categories[type].push(c);
+        });
+      });
+
+      saveData();
+      render();
+      showToast(`Импортировано: ${addedTx} записей`);
+    } catch {
+      showToast('Ошибка чтения CSV-файла');
+    }
+  };
+  reader.readAsText(file, 'utf-8');
+}
+
+/* ===== УМНЫЙ ИМПОРТ С ИИ И БЫСТРОЕ ДОБАВЛЕНИЕ ===== */
+let _aiImportFile = null;
+
+async function aiImportChunk(rows, chunkIndex, totalChunks) {
+  const currentDate = new Date().toISOString().slice(0, 10);
+  const prompt = `You are an expert financial transaction parser.
+Parse the following rows from a bank statement CSV/text file and extract transactions as JSON.
+Chunk ${chunkIndex} of ${totalChunks}.
+
+For each transaction extract:
+- "type": "expense" or "income"
+- "amount": positive number
+- "categoryName": category with emoji prefix matching: ${state.categories.expense.concat(state.categories.income).map(c => c.name).join(', ')}.
+- "date": YYYY-MM-DD (default to ${currentDate} if missing).
+- "comment": short description.
+
+Return ONLY a valid JSON array.
+
+Rows:
+${rows.join('\n')}`;
+
+  const responseText = await callAI([{ role: 'user', parts: [{ text: prompt }] }]);
+  const cleaned = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
+  const parsed = JSON.parse(cleaned);
+  return Array.isArray(parsed) ? parsed : [];
+}
+
+function splitIntoChunks(text, chunkSize) {
+  const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+  const chunks = [];
+  for (let i = 0; i < lines.length; i += chunkSize) {
+    chunks.push(lines.slice(i, i + chunkSize));
+  }
+  return chunks;
+}
+
+async function aiSmartImportFromFile(file) {
+  const apiKey = localStorage.getItem(AI_KEY) || '';
+  if (!apiKey) {
+    showToast('Сначала укажите API Key в Настройках!');
+    openSettingsDialog();
+    return;
+  }
+
+  const submitBtn = document.getElementById('submitAiImportBtn');
+  const cancelBtn = document.getElementById('cancelAiImport');
+  const dropZone = document.getElementById('aiImportDropZone');
+  const progressEl = document.getElementById('aiImportProgress');
+  const progressLabel = document.getElementById('aiImportProgressLabel');
+  const progressCount = document.getElementById('aiImportProgressCount');
+  const progressBar = document.getElementById('aiImportProgressBar');
+  const progressSub = document.getElementById('aiImportProgressSub');
+
+  if (submitBtn) submitBtn.disabled = true;
+  if (cancelBtn) cancelBtn.disabled = true;
+  if (dropZone) dropZone.style.opacity = '0.5';
+  if (progressEl) progressEl.style.display = 'block';
+
+  const CHUNK_SIZE = 80;
+  let allItems = [];
+  let totalImported = 0;
+
+  const updateProgress = (done, total, label, sub) => {
+    if (progressLabel) progressLabel.textContent = label;
+    if (progressCount) progressCount.textContent = `${done} / ${total}`;
+    if (progressBar) progressBar.style.width = total > 0 ? `${Math.round((done / total) * 100)}%` : '0%';
+    if (progressSub) progressSub.textContent = sub || '';
+  };
+
+  const ext = file.name.split('.').pop().toLowerCase();
+
+  try {
+    let rawText = '';
+    if (ext === 'xlsx' || ext === 'xls') {
+      if (!window.XLSX) {
+        await new Promise((resolve, reject) => {
+          const s = document.createElement('script');
+          s.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+          s.onload = resolve;
+          s.onerror = reject;
+          document.head.appendChild(s);
+        });
+      }
+      rawText = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = evt => {
+          try {
+            const data = new Uint8Array(evt.target.result);
+            const wb = XLSX.read(data, { type: 'array' });
+            let result = '';
+            wb.SheetNames.forEach(name => {
+              const csv = XLSX.utils.sheet_to_csv(wb.Sheets[name]);
+              if (csv.trim()) result += csv + '\n';
+            });
+            resolve(result);
+          } catch { reject(new Error('xlsx_parse_error')); }
+        };
+        reader.onerror = reject;
+        reader.readAsArrayBuffer(file);
+      });
+    } else {
+      rawText = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = evt => resolve(evt.target.result.replace(/^\uFEFF/, ''));
+        reader.onerror = reject;
+        reader.readAsText(file, 'utf-8');
+      });
+    }
+
+    const chunks = splitIntoChunks(rawText, CHUNK_SIZE);
+    const totalChunks = chunks.length;
+    if (!totalChunks) {
+      showToast('Файл пуст');
+      return;
+    }
+
+    for (let i = 0; i < totalChunks; i++) {
+      updateProgress(i, totalChunks, `✨ Часть ${i + 1} из ${totalChunks}...`, `Найдено: ${allItems.length}`);
+      try {
+        const items = await aiImportChunk(chunks[i], i + 1, totalChunks);
+        allItems = allItems.concat(items);
+      } catch (err) {
+        console.warn(`Chunk ${i + 1} error:`, err);
+      }
+    }
+
+    const colors = ['#F5BD7A', '#F48278', '#E46C99', '#67C992', '#B794F4', '#76A9FA'];
+    allItems.forEach(item => {
+      if (!item.amount || !item.type || !item.categoryName) return;
+      const type = item.type === 'income' ? 'income' : 'expense';
+      const cleanCatName = item.categoryName.trim();
+      let cat = state.categories[type].find(c => {
+        const n1 = cleanCatTitle(c.name).toLowerCase();
+        const n2 = cleanCatTitle(cleanCatName).toLowerCase();
+        return n1 === n2 || n1.includes(n2) || n2.includes(n1);
+      });
+      if (!cat) {
+        cat = { id: uid(), name: cleanCatName, color: colors[Math.floor(Math.random() * colors.length)] };
+        state.categories[type].push(cat);
+      }
+      state.transactions.push({
+        id: uid(),
+        type,
+        amount: parseFloat(item.amount),
+        categoryId: cat.id,
+        date: item.date || new Date().toISOString().slice(0, 10),
+        comment: item.comment || '',
+        accountId: 'default',
+        paid: true
+      });
+      totalImported++;
+    });
+
+    saveData();
+    render();
+    const d = document.getElementById('aiImportDialog');
+    if (d) d.close();
+    showToast(`🪄 ИИ добавил ${totalImported} операций!`);
+  } catch {
+    showToast('Ошибка при импорте файла');
+  } finally {
+    if (submitBtn) submitBtn.disabled = true;
+    if (cancelBtn) cancelBtn.disabled = false;
+    if (dropZone) dropZone.style.opacity = '1';
+    if (progressEl) progressEl.style.display = 'none';
+    _aiImportFile = null;
+    const fileNameEl = document.getElementById('aiImportFileName');
+    if (fileNameEl) fileNameEl.textContent = 'Нажмите или перетащите файл сюда';
+  }
+}
+
+async function quickAiSmartImport(inputText) {
+  const apiKey = localStorage.getItem(AI_KEY) || '';
+  if (!apiKey) {
+    showToast('Сначала укажите API Key в Настройках!');
+    openSettingsDialog();
+    return;
+  }
+
+  const loader = document.getElementById('quickAiAddLoader');
+  const submitBtn = document.getElementById('submitQuickAiAddBtn');
+  if (loader) loader.style.display = 'flex';
+  if (submitBtn) submitBtn.disabled = true;
+
+  const now = new Date();
+  const currentDate = now.toISOString().slice(0, 10);
+  const prompt = `System Context: Parse raw financial text into JSON array of transactions.
+Current Date: ${currentDate}.
+Fields per transaction:
+- "type": "expense" or "income"
+- "amount": positive number
+- "categoryName": category name matching one of: ${state.categories.expense.concat(state.categories.income).map(c => c.name).join(', ')}
+- "date": YYYY-MM-DD (default ${currentDate})
+- "comment": short comment
+Return ONLY valid JSON array.
+
+Text:
+${inputText}`;
+
+  try {
+    const responseText = await callAI([{ role: 'user', parts: [{ text: prompt }] }]);
+    const cleaned = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
+    const parsed = JSON.parse(cleaned);
+    if (!Array.isArray(parsed)) throw new Error('NOT_ARRAY');
+
+    let importedCount = 0;
+    const colors = ['#F5BD7A', '#F48278', '#E46C99', '#67C992', '#B794F4'];
+
+    parsed.forEach(item => {
+      if (!item.amount || !item.type || !item.categoryName) return;
+      const type = item.type === 'income' ? 'income' : 'expense';
+      const cleanCatName = item.categoryName.trim();
+      let cat = state.categories[type].find(c => {
+        const n1 = cleanCatTitle(c.name).toLowerCase();
+        const n2 = cleanCatTitle(cleanCatName).toLowerCase();
+        return n1 === n2 || n1.includes(n2) || n2.includes(n1);
+      });
+      if (!cat) {
+        cat = { id: uid(), name: cleanCatName, color: colors[Math.floor(Math.random() * colors.length)] };
+        state.categories[type].push(cat);
+      }
+      const txDate = item.date || currentDate;
+      state.transactions.push({
+        id: uid(),
+        type,
+        amount: parseFloat(item.amount),
+        categoryId: cat.id,
+        date: txDate,
+        comment: item.comment || '',
+        accountId: 'default',
+        paid: true
+      });
+      importedCount++;
+    });
+
+    saveData();
+    render();
+    const d = document.getElementById('quickAiAddDialog');
+    if (d) d.close();
+    showToast(`🪄 ИИ распознал и добавил ${importedCount} операций!`);
+  } catch {
+    showToast('Ошибка ИИ при распознавании текста');
+  } finally {
+    if (loader) loader.style.display = 'none';
+    if (submitBtn) submitBtn.disabled = false;
+  }
+}
+
+/* ===== ДИАЛОГ НАСТРОЕК ===== */
+function openSettingsDialog() {
+  updateThemeToggle();
+  const providerEl = document.getElementById('aiProvider');
+  if (providerEl) providerEl.value = state.aiProvider || 'google';
+  const urlEl = document.getElementById('aiApiUrl');
+  if (urlEl) urlEl.value = state.aiApiUrl || '';
+  const modelEl = document.getElementById('aiModel');
+  if (modelEl) modelEl.value = state.aiModel || 'gemini-3.1-flash-lite';
+  const keyEl = document.getElementById('aiApiKey');
+  if (keyEl) keyEl.value = localStorage.getItem(AI_KEY) || '';
+  const urlLabel = document.getElementById('aiApiUrlLabel');
+  if (urlLabel) urlLabel.style.display = state.aiProvider === 'custom' ? 'flex' : 'none';
+
+  const supabaseUrlEl = document.getElementById('supabaseUrlInput');
+  if (supabaseUrlEl) supabaseUrlEl.value = localStorage.getItem('supabase_url') || '';
+  const supabaseKeyEl = document.getElementById('supabaseKeyInput');
+  if (supabaseKeyEl) supabaseKeyEl.value = localStorage.getItem('supabase_key') || '';
+
+  document.getElementById('settingsDialog').showModal();
+}
+
+function clearAllData() {
+  if (!confirm('Удалить все локальные транзакции и категории? Это действие нельзя отменить.')) return;
+  state.transactions = [];
+  state.categories = {
+    expense: [...DEFAULT_CATEGORIES.expense],
+    income: [...DEFAULT_CATEGORIES.income]
+  };
+  state.balanceAdjustment = 0;
+  saveData();
+  render();
+  showToast('Все локальные данные удалены');
+}
+
+/* ===== АНАЛИТИКА И ШТРИХОВАННАЯ КОЛЬЦЕВАЯ ДИАГРАММА (РЕФЕРЕНС 4) ===== */
+let dashPeriod = 'month';
+
+function getDashRange(period) {
+  if (period === 'month' && state.periodScope === 'month') {
+    return getPeriodRange();
+  }
+  const now = new Date();
+  const today = now.toISOString().slice(0, 10);
+  if (period === 'all') return { from: '0000-01-01', to: '9999-12-31' };
+  if (period === 'year') return { from: `${state.selectedYear}-01-01`, to: `${state.selectedYear}-12-31` };
+  if (period === 'quarter') {
+    const q = Math.floor(state.selectedMonth / 3);
+    const from = new Date(state.selectedYear, q * 3, 1).toISOString().slice(0, 10);
+    const to = new Date(state.selectedYear, q * 3 + 3, 0).toISOString().slice(0, 10);
+    return { from, to };
+  }
+  return getPeriodRange();
+}
+
+function renderDashCategoryFilter() {
+  const sel = document.getElementById('dashCategoryFilter');
+  if (!sel) return;
+  const cats = [...state.categories.expense, ...state.categories.income];
+  sel.innerHTML = '<option value="all">Все категории</option>' +
+    cats.map(c => `<option value="${escapeHtml(c.id)}">${escapeHtml(c.name)}</option>`).join('');
+  sel.value = state.dashFilters.category || 'all';
+}
+
+function renderDashboard() {
+  let from = '', to = '';
+  if (state.dashFilters.dateFrom || state.dashFilters.dateTo) {
+    from = state.dashFilters.dateFrom || '0000-01-01';
+    to = state.dashFilters.dateTo || '9999-12-31';
+  } else {
+    const range = getDashRange(dashPeriod);
+    from = range.from;
+    to = range.to;
+  }
+
+  let txs = state.transactions.filter(t => t.date >= from && t.date <= to);
+
+  if (state.dashFilters.search) {
+    const q = state.dashFilters.search.toLowerCase();
+    txs = txs.filter(tx => {
+      const cat = getCat(tx.type, tx.categoryId);
+      return cat.name.toLowerCase().includes(q) || (tx.comment || '').toLowerCase().includes(q);
+    });
+  }
+  if (state.dashFilters.category && state.dashFilters.category !== 'all') {
+    txs = txs.filter(tx => tx.categoryId === state.dashFilters.category);
+  }
+  if (state.dashFilters.amountMin !== '') {
+    txs = txs.filter(tx => tx.amount >= parseFloat(state.dashFilters.amountMin));
+  }
+  if (state.dashFilters.amountMax !== '') {
+    txs = txs.filter(tx => tx.amount <= parseFloat(state.dashFilters.amountMax));
+  }
+
+  const income = txs.filter(t => t.type === 'income').reduce((s, t) => s + t.amount, 0);
+  const expense = txs.filter(t => t.type === 'expense').reduce((s, t) => s + t.amount, 0);
+  const net = income - expense;
+
+  const summaryEl = document.getElementById('dashSummary');
+  if (summaryEl) {
+    summaryEl.innerHTML = `
+      <div class="dash-cards">
+        <div class="dash-card income">
+          <div class="dash-card-label">Доходы</div>
+          <div class="dash-card-val">${fmt(income)}</div>
+        </div>
+        <div class="dash-card expense">
+          <div class="dash-card-label">Расходы</div>
+          <div class="dash-card-val">${fmt(expense)}</div>
+        </div>
+        <div class="dash-card net ${net >= 0 ? 'pos' : 'neg'}">
+          <div class="dash-card-label">Баланс</div>
+          <div class="dash-card-val">${fmt(net)}</div>
+        </div>
+      </div>`;
+  }
+
+  renderDashDonutChart(txs);
+  renderDashExtremes(txs);
+  renderDashBarChart(txs);
+  renderDashBreakdown('dashExpenseBreakdown', txs.filter(t => t.type === 'expense'), 'expense', expense);
+  renderDashBreakdown('dashIncomeBreakdown', txs.filter(t => t.type === 'income'), 'income', income);
+  renderDashYearlyDetail();
+  renderDashTop(txs);
+}
+
+/* Кольцевая диаграмма со штриховкой + выносные бейджи с процентами (Референс 4) */
+function describeDonutSector(cx, cy, rOuter, rInner, startAngleDeg, endAngleDeg) {
+  const span = endAngleDeg - startAngleDeg;
+  if (span >= 359.9) {
+    return [
+      `M ${cx} ${cy - rOuter}`,
+      `A ${rOuter} ${rOuter} 0 1 1 ${cx - 0.01} ${cy - rOuter}`,
+      `Z`,
+      `M ${cx} ${cy - rInner}`,
+      `A ${rInner} ${rInner} 0 1 0 ${cx - 0.01} ${cy - rInner}`,
+      `Z`
+    ].join(' ');
+  }
+
+  const toRad = deg => ((deg - 90) * Math.PI) / 180;
+  const startOuter = { x: cx + rOuter * Math.cos(toRad(startAngleDeg)), y: cy + rOuter * Math.sin(toRad(startAngleDeg)) };
+  const endOuter = { x: cx + rOuter * Math.cos(toRad(endAngleDeg)), y: cy + rOuter * Math.sin(toRad(endAngleDeg)) };
+  const startInner = { x: cx + rInner * Math.cos(toRad(endAngleDeg)), y: cy + rInner * Math.sin(toRad(endAngleDeg)) };
+  const endInner = { x: cx + rInner * Math.cos(toRad(startAngleDeg)), y: cy + rInner * Math.sin(toRad(startAngleDeg)) };
+  const largeArc = span > 180 ? 1 : 0;
+
+  return [
+    `M ${startOuter.x.toFixed(2)} ${startOuter.y.toFixed(2)}`,
+    `A ${rOuter} ${rOuter} 0 ${largeArc} 1 ${endOuter.x.toFixed(2)} ${endOuter.y.toFixed(2)}`,
+    `L ${startInner.x.toFixed(2)} ${startInner.y.toFixed(2)}`,
+    `A ${rInner} ${rInner} 0 ${largeArc} 0 ${endInner.x.toFixed(2)} ${endInner.y.toFixed(2)}`,
+    `Z`
+  ].join(' ');
+}
+
+function renderDashDonutChart(txs) {
+  const stage = document.getElementById('dashDonutChart');
+  const scriptTitle = document.getElementById('analyticsScriptTitle');
+  const catListEl = document.getElementById('analyticsCategoryList');
+  if (!stage) return;
+
+  const targetType = state.analyticsType || 'expense';
+  if (scriptTitle) scriptTitle.textContent = targetType === 'income' ? 'Доход' : 'Расходы';
+
+  const filteredTxs = txs.filter(t => t.type === targetType);
+  const total = filteredTxs.reduce((s, t) => s + t.amount, 0);
+
+  if (!filteredTxs.length || total <= 0) {
+    stage.innerHTML = `<div class="empty-state visible">Нет данных о ${targetType === 'income' ? 'доходах' : 'расходах'} за этот период</div>`;
+    if (catListEl) catListEl.innerHTML = '';
+    return;
+  }
+
+  const totals = {};
+  filteredTxs.forEach(tx => { totals[tx.categoryId] = (totals[tx.categoryId] || 0) + tx.amount; });
+  const sorted = Object.entries(totals).sort((a, b) => b[1] - a[1]);
+
+  const CX = 170, CY = 170;
+  const R_OUTER = 108;
+  const R_INNER = 50;
+  const R_BADGE = 142;
+
+  const patterns = [];
+  const paths = [];
+  const badges = [];
+
+  let currentAngle = 0;
+
+  sorted.forEach(([catId, amt], idx) => {
+    const cat = getCat(targetType, catId);
+    const color = cat.color || '#F5BD7A';
+    const pct = amt / total;
+    const sweep = pct * 360;
+    const startAngle = currentAngle;
+    const endAngle = currentAngle + sweep;
+    const midAngle = startAngle + sweep / 2;
+    currentAngle = endAngle;
+
+    const patId = `donut-hatch-${idx}`;
+    // Чередуем наклон штриховки для выразительности как на референсе 4
+    const rot = idx % 2 === 0 ? -25 : -60;
+    patterns.push(`
+      <pattern id="${patId}" width="5.5" height="5.5" patternTransform="rotate(${rot})" patternUnits="userSpaceOnUse">
+        <line x1="0" y1="0" x2="0" y2="5.5" stroke="${escapeHtml(color)}" stroke-width="2.1" />
+      </pattern>
+    `);
+
+    const dPath = describeDonutSector(CX, CY, R_OUTER, R_INNER, startAngle, endAngle);
+    paths.push(`
+      <path class="donut-slice-path"
+        d="${dPath}"
+        fill="url(#${patId})"
+        stroke="var(--bg)"
+        stroke-width="3.5"
+        fill-rule="evenodd"
+        data-cat="${escapeHtml(catId)}">
+        <title>${escapeHtml(cleanCatTitle(cat.name))}: ${fmt(amt)} (${Math.round(pct * 100)}%)</title>
+      </path>
+    `);
+
+    // Выносная иконка и процент вокруг диаграммы
+    const rad = ((midAngle - 90) * Math.PI) / 180;
+    const bx = ((CX + R_BADGE * Math.cos(rad)) / 340) * 100;
+    const by = ((CY + R_BADGE * Math.sin(rad)) / 340) * 100;
+    const pctRounded = Math.round(pct * 100);
+
+    badges.push(`
+      <div class="donut-outer-badge" style="left:${bx.toFixed(1)}%; top:${by.toFixed(1)}%;">
+        <div class="donut-outer-icon" style="background:${escapeHtml(color)}">
+          ${getCategorySvgIcon(cat.name, cat.iconType)}
+        </div>
+        <span class="donut-outer-pct">${pctRounded}%</span>
+      </div>
+    `);
+  });
+
+  stage.innerHTML = `
+    <svg class="hatched-donut-svg" viewBox="0 0 340 340">
+      <defs>${patterns.join('')}</defs>
+      ${paths.join('')}
+    </svg>
+    ${badges.join('')}
+  `;
+
+  if (catListEl) {
+    catListEl.innerHTML = buildCategorySummaryRowsHTML(filteredTxs, targetType);
+    bindCategoryRowClicks(catListEl, targetType);
+  }
+}
+
+function renderDashExtremes(txs) {
+  const el = document.getElementById('dashExtremes');
+  if (!el) return;
+  const expenses = txs.filter(t => t.type === 'expense');
+  if (!expenses.length) { el.innerHTML = ''; return; }
+
+  const maxTx = expenses.reduce((max, tx) => tx.amount > max.amount ? tx : max, expenses[0]);
+  const minTx = expenses.reduce((min, tx) => tx.amount < min.amount ? tx : min, expenses[0]);
+  const maxCat = getCat('expense', maxTx.categoryId);
+  const minCat = getCat('expense', minTx.categoryId);
+
+  el.innerHTML = `
+    <div class="dash-section-title">📊 Экстремумы трат за период</div>
+    <div class="dash-extremes-grid">
+      <div class="extreme-card max">
+        <span class="extreme-label">Самая дорогая покупка</span>
+        <span class="extreme-amt">${fmt(maxTx.amount)}</span>
+        <span class="extreme-cat">${escapeHtml(cleanCatTitle(maxCat.name))}</span>
+        <span class="extreme-comment">${escapeHtml(maxTx.comment || 'Без комментария')}</span>
+        <span class="extreme-date">${fmtDate(maxTx.date)}</span>
+      </div>
+      <div class="extreme-card min">
+        <span class="extreme-label">Самая дешевая покупка</span>
+        <span class="extreme-amt">${fmt(minTx.amount)}</span>
+        <span class="extreme-cat">${escapeHtml(cleanCatTitle(minCat.name))}</span>
+        <span class="extreme-comment">${escapeHtml(minTx.comment || 'Без комментария')}</span>
+        <span class="extreme-date">${fmtDate(minTx.date)}</span>
+      </div>
+    </div>`;
+}
+
+function renderDashBarChart(txs) {
+  const el = document.getElementById('dashBarChart');
+  if (!el) return;
+  const months = {};
+  txs.forEach(tx => {
+    const key = tx.date.slice(0, 7);
+    if (!months[key]) months[key] = { income: 0, expense: 0 };
+    months[key][tx.type] += tx.amount;
+  });
+  const keys = Object.keys(months).sort();
+  if (!keys.length) { el.innerHTML = ''; return; }
+
+  const maxVal = Math.max(...keys.map(k => Math.max(months[k].income, months[k].expense)), 1);
+  el.innerHTML = `<div class="dash-section-title">По месяцам</div>
+    <div class="dash-bars">
+      ${keys.map(k => {
+        const d = new Date(k + '-01T00:00:00');
+        const label = d.toLocaleDateString('ru-RU', { month: 'short', year: '2-digit' });
+        const ih = Math.round((months[k].income / maxVal) * 100);
+        const eh = Math.round((months[k].expense / maxVal) * 100);
+        return `<div class="dash-bar-group">
+          <div class="dash-bar-pair">
+            <div class="dash-bar income" style="height:${ih}%" title="Доходы: ${fmt(months[k].income)}"></div>
+            <div class="dash-bar expense" style="height:${eh}%" title="Расходы: ${fmt(months[k].expense)}"></div>
+          </div>
+          <div class="dash-bar-label">${label}</div>
+        </div>`;
+      }).join('')}
+    </div>`;
+}
+
+function renderDashBreakdown(elId, txs, type, total) {
+  const el = document.getElementById(elId);
+  if (!el) return;
+  if (!txs.length) { el.innerHTML = ''; return; }
+  const totals = {};
+  txs.forEach(tx => { totals[tx.categoryId] = (totals[tx.categoryId] || 0) + tx.amount; });
+  const sorted = Object.entries(totals).sort((a, b) => b[1] - a[1]);
+  const title = type === 'expense' ? 'Расходы по категориям' : 'Доходы по категориям';
+
+  el.innerHTML = `<div class="dash-section-title">${title}</div>
+    <div class="dash-breakdown-list">
+      ${sorted.map(([catId, amt]) => {
+        const cat = getCat(type, catId);
+        const pct = total > 0 ? Math.round((amt / total) * 100) : 0;
+        return `<div class="dash-breakdown-row">
+          <div class="dash-breakdown-left">
+            <span class="dash-breakdown-dot" style="background:${escapeHtml(cat.color)}"></span>
+            <span class="dash-breakdown-name">${escapeHtml(cleanCatTitle(cat.name))}</span>
+          </div>
+          <div class="dash-breakdown-right">
+            <span class="dash-breakdown-pct">${pct}%</span>
+            <span class="dash-breakdown-amt">${fmt(amt)}</span>
+          </div>
+        </div>
+        <div class="dash-breakdown-bar-wrap">
+          <div class="dash-breakdown-bar" style="width:${pct}%;background:${escapeHtml(cat.color)}"></div>
+        </div>`;
+      }).join('')}
+    </div>`;
+}
+
+function renderDashYearlyDetail() {
+  const el = document.getElementById('dashYearlyList');
+  if (!el) return;
+  const grouped = {};
+  state.transactions.forEach(tx => {
+    const d = new Date(tx.date + 'T00:00:00');
+    const y = d.getFullYear(), m = d.getMonth();
+    if (!grouped[y]) grouped[y] = {};
+    if (!grouped[y][m]) grouped[y][m] = [];
+    grouped[y][m].push(tx);
+  });
+
+  const years = Object.keys(grouped).sort((a, b) => b - a);
+  if (!years.length) {
+    el.innerHTML = '<li class="empty-state visible">Нет данных о транзакциях</li>';
+    return;
+  }
+
+  el.innerHTML = years.map(y => {
+    const isCollapsed = state.collapsedYearsDetail.has(y);
+    const yearTxs = Object.values(grouped[y]).flat();
+    const yearSum = yearTxs.filter(t => t.type === 'expense').reduce((s, t) => s + t.amount, 0);
+    const months = Object.keys(grouped[y]).sort((a, b) => b - a);
+
+    const monthsHtml = isCollapsed ? '' : `
+      <div class="dash-months-container">
+        ${months.map(m => {
+          const monthTxs = grouped[y][m];
+          const monthIncome = monthTxs.filter(t => t.type === 'income').reduce((s, t) => s + t.amount, 0);
+          const monthExpense = monthTxs.filter(t => t.type === 'expense').reduce((s, t) => s + t.amount, 0);
+          return `<div class="dash-month-card">
+            <div class="dash-month-name">${monthName(parseInt(m))}</div>
+            <div class="dash-month-stats">
+              <span>Доход: <strong style="color:var(--income)">${fmt(monthIncome)}</strong></span>
+              <span>Расход: <strong style="color:var(--expense)">${fmt(monthExpense)}</strong></span>
+            </div>
+          </div>`;
+        }).join('')}
+      </div>`;
+
+    return `<li class="dash-year-row">
+      <div class="dash-year-head ${isCollapsed ? 'collapsed' : ''}" data-year="${y}">
+        <span>${y} год</span>
+        <span>${fmt(yearSum)} трат</span>
+      </div>
+      ${monthsHtml}
+    </li>`;
+  }).join('');
+
+  el.querySelectorAll('.dash-year-head').forEach(head => {
+    head.addEventListener('click', () => {
+      const year = head.dataset.year;
+      if (state.collapsedYearsDetail.has(year)) state.collapsedYearsDetail.delete(year);
+      else state.collapsedYearsDetail.add(year);
+      renderDashYearlyDetail();
+    });
+  });
+}
+
+function renderDashTop(txs) {
+  const el = document.getElementById('dashTrend');
+  if (!el) return;
+  if (!txs.length) { el.innerHTML = ''; return; }
+  const top = [...txs].sort((a, b) => b.amount - a.amount).slice(0, 5);
+  el.innerHTML = `<div class="dash-section-title">Топ-5 крупнейших операций</div>
+    <div class="dash-top-list">
+      ${top.map(tx => {
+        const cat = getCat(tx.type, tx.categoryId);
+        return `<div class="dash-top-row">
+          ${renderCatBadgeHTML(cat)}
+          <div class="dash-top-body">
+            <div class="dash-top-cat">${escapeHtml(cleanCatTitle(cat.name))}</div>
+            <div class="dash-top-date">${fmtDate(tx.date)}${tx.comment ? ' · ' + escapeHtml(tx.comment) : ''}</div>
+          </div>
+          <div class="dash-top-amt ${tx.type}">${tx.type === 'expense' ? '-' : '+'}${fmt(tx.amount)}</div>
+        </div>`;
+      }).join('')}
+    </div>`;
+}
+
+/* ===== ИИ ФИНАНСОВЫЙ СОВЕТНИК ===== */
+function formatMarkdown(text) {
+  let html = escapeHtml(text);
+  html = html.replace(/^### (.*?)$/gm, '<h4>$1</h4>');
+  html = html.replace(/^## (.*?)$/gm, '<h3>$1</h3>');
+  html = html.replace(/^# (.*?)$/gm, '<h2>$1</h2>');
+  html = html.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+  html = html.replace(/^\* (.*?)$/gm, '<li>$1</li>');
+  html = html.replace(/^- (.*?)$/gm, '<li>$1</li>');
+  html = html.replace(/\n\n/g, '<br><br>').replace(/\n/g, '<br>');
+  return html;
+}
+
+function renderAiMessages() {
+  const container = document.getElementById('aiChatMessages');
+  if (!container) return;
+  if (!state.aiChatHistory.length) {
+    container.innerHTML = '';
+    return;
+  }
+  container.innerHTML = state.aiChatHistory.map(msg => {
+    const text = msg.parts[0].text;
+    if (text.startsWith('System Context:')) return '';
+    const isUser = msg.role === 'user';
+    return `<div class="ai-message ${isUser ? 'user' : 'model'}">${formatMarkdown(text)}</div>`;
+  }).join('');
+  container.scrollTop = container.scrollHeight;
+}
+
+async function callAI(history) {
+  const apiKey = localStorage.getItem(AI_KEY) || '';
+  const provider = state.aiProvider || 'google';
+  const model = state.aiModel || 'gemini-3.1-flash-lite';
+  const customUrl = state.aiApiUrl || '';
+  if (!apiKey) throw new Error('KEY_MISSING');
+
+  if (provider === 'google') {
+    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ contents: history })
+    });
+    if (!res.ok) throw new Error('API_ERROR');
+    const data = await res.json();
+    if (data.candidates?.[0]?.content?.parts?.[0]?.text) {
+      return data.candidates[0].content.parts[0].text;
+    }
+    throw new Error('BAD_RESPONSE');
+  } else {
+    let baseUrl = 'https://api.openai.com/v1';
+    if (provider === 'custom' && customUrl) baseUrl = customUrl.replace(/\/+$/, '');
+    const messages = history.map(msg => {
+      const role = msg.role === 'model' ? 'assistant' : 'user';
+      return { role, content: msg.parts[0].text };
+    });
+    const res = await fetch(`${baseUrl}/chat/completions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+      body: JSON.stringify({ model, messages })
+    });
+    if (!res.ok) throw new Error('API_ERROR');
+    const data = await res.json();
+    if (data.choices?.[0]?.message?.content) return data.choices[0].message.content;
+    throw new Error('BAD_RESPONSE');
+  }
+}
+
+async function sendAiMessage() {
+  const apiKey = localStorage.getItem(AI_KEY) || '';
+  if (!apiKey) {
+    showToast('Сначала укажите API Key в Настройках!');
+    openSettingsDialog();
+    return;
+  }
+  const inputEl = document.getElementById('aiChatInput');
+  const query = inputEl.value.trim();
+  if (!query) return;
+  inputEl.value = '';
+
+  state.aiChatHistory.push({ role: 'user', parts: [{ text: query }] });
+  renderAiMessages();
+
+  const container = document.getElementById('aiChatMessages');
+  const loader = document.createElement('div');
+  loader.className = 'ai-message model loader';
+  loader.textContent = '✨ Думаю...';
+  container.appendChild(loader);
+  container.scrollTop = container.scrollHeight;
+
+  if (!state.currentAiSessionId) state.currentAiSessionId = uid();
+
+  try {
+    const text = await callAI(state.aiChatHistory);
+    loader.remove();
+    state.aiChatHistory.push({ role: 'model', parts: [{ text }] });
+    renderAiMessages();
+    saveAiSession();
+  } catch {
+    loader.remove();
+    const errorMsg = document.createElement('div');
+    errorMsg.className = 'ai-message model';
+    errorMsg.textContent = '❌ Ошибка API или сети. Проверьте настройки ИИ.';
+    container.appendChild(errorMsg);
+  }
+}
+
+async function startAiReport() {
+  const apiKey = localStorage.getItem(AI_KEY) || '';
+  if (!apiKey) {
+    showToast('Сначала укажите API Key в Настройках!');
+    openSettingsDialog();
+    return;
+  }
+  const { from, to } = getDashRange(dashPeriod);
+  const txs = state.transactions.filter(t => t.date >= from && t.date <= to);
+  if (!txs.length) {
+    showToast('Нет транзакций за этот период для анализа');
+    return;
+  }
+
+  const summary = txs.map(t => {
+    const cat = getCat(t.type, t.categoryId);
+    return `${t.date}: ${t.type === 'expense' ? 'Расход' : 'Доход'} ${t.amount} ₽ (${cleanCatTitle(cat.name)}) ${t.comment || ''}`;
+  }).join('\n');
+
+  state.aiChatHistory = [{
+    role: 'user',
+    parts: [{ text: `System Context: You are a friendly personal finance advisor. Transactions:\n${summary}\n\nUser Question: Проанализируй мои расходы и дай 3 практичных совета.` }]
+  }];
+  state.currentAiSessionId = uid();
+
+  document.getElementById('aiPromptCard').style.display = 'none';
+  document.getElementById('aiChatBox').style.display = 'flex';
+  const container = document.getElementById('aiChatMessages');
+  container.innerHTML = '<div class="ai-message model loader">✨ Анализирую ваш бюджет...</div>';
+
+  try {
+    const text = await callAI(state.aiChatHistory);
+    state.aiChatHistory.push({ role: 'model', parts: [{ text }] });
+    renderAiMessages();
+    saveAiSession();
+  } catch {
+    container.innerHTML = '<div class="ai-message model">❌ Не удалось связаться с ИИ. Проверьте API-ключ.</div>';
+  }
+}
+
+function saveAiSession() {
+  if (!state.currentAiSessionId) return;
+  let title = 'Анализ бюджета с ИИ';
+  if (!state.aiSessions) state.aiSessions = [];
+  const existingIdx = state.aiSessions.findIndex(s => s.id === state.currentAiSessionId);
+  const sessionObj = {
+    id: state.currentAiSessionId,
+    date: new Date().toISOString(),
+    title,
+    history: state.aiChatHistory
+  };
+  if (existingIdx !== -1) state.aiSessions[existingIdx] = sessionObj;
+  else state.aiSessions.unshift(sessionObj);
+  localStorage.setItem('koshelek_ai_sessions', JSON.stringify(state.aiSessions.slice(0, 15)));
+  syncItem('ai_sessions', 'upsert', sessionObj);
+}
+
+function deleteAiSession(id) {
+  state.aiSessions = (state.aiSessions || []).filter(s => s.id !== id);
+  localStorage.setItem('koshelek_ai_sessions', JSON.stringify(state.aiSessions));
+  openAiHistoryDialog();
+  syncItem('ai_sessions', 'delete', { id });
+  showToast('Сессия удалена');
+}
+
+function openAiHistoryDialog() {
+  const container = document.getElementById('aiHistoryList');
+  if (!container) return;
+  if (!state.aiSessions || !state.aiSessions.length) {
+    container.innerHTML = '<li class="empty-state visible">История консультаций пуста</li>';
+    document.getElementById('aiHistoryDialog')?.showModal();
+    return;
+  }
+  container.innerHTML = state.aiSessions.map(s => {
+    const d = new Date(s.date);
+    const dateStr = d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+    return `<li class="cat-item">
+      <div style="flex:1;cursor:pointer;" class="ai-history-select" data-id="${escapeHtml(s.id)}">
+        <div style="font-weight:700;font-size:14px;">${escapeHtml(s.title)}</div>
+        <div style="font-size:11px;color:var(--text3);">${escapeHtml(dateStr)}</div>
+      </div>
+      <button type="button" class="cat-item-del ai-history-del" data-id="${escapeHtml(s.id)}">×</button>
+    </li>`;
+  }).join('');
+
+  container.querySelectorAll('.ai-history-select').forEach(el => {
+    el.addEventListener('click', () => {
+      const s = state.aiSessions.find(x => x.id === el.dataset.id);
+      if (s) {
+        state.currentAiSessionId = s.id;
+        state.aiChatHistory = s.history;
+        document.getElementById('aiPromptCard').style.display = 'none';
+        document.getElementById('aiChatBox').style.display = 'flex';
+        renderAiMessages();
+        document.getElementById('aiHistoryDialog')?.close();
+      }
+    });
+  });
+  container.querySelectorAll('.ai-history-del').forEach(btn => {
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      deleteAiSession(btn.dataset.id);
+    });
+  });
+  document.getElementById('aiHistoryDialog')?.showModal();
+}
+
+/* ===== ГОЛОСОВОЙ ВВОД ===== */
+function initVoiceInput() {
+  const voiceBtn = document.getElementById('voiceSearchBtn');
+  const textInput = document.getElementById('quickAiAddText');
+  if (!voiceBtn || !textInput) return;
+
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SpeechRecognition) {
+    voiceBtn.style.display = 'none';
+    return;
+  }
+
+  const recognition = new SpeechRecognition();
+  recognition.lang = 'ru-RU';
+  recognition.interimResults = false;
+  let isListening = false;
+
+  voiceBtn.addEventListener('click', () => {
+    if (isListening) recognition.stop();
+    else { try { recognition.start(); } catch {} }
+  });
+  recognition.onstart = () => {
+    isListening = true;
+    voiceBtn.classList.add('recording');
+    textInput.placeholder = 'Слушаю вас... Говорите...';
+  };
+  recognition.onend = () => {
+    isListening = false;
+    voiceBtn.classList.remove('recording');
+    textInput.placeholder = 'Например: продукты 525р сегодня';
+  };
+  recognition.onresult = event => {
+    const transcript = event.results[0][0].transcript;
+    if (transcript) {
+      const cur = textInput.value.trim();
+      textInput.value = (cur ? cur + ' ' : '') + transcript;
+    }
+  };
+}
+
+/* ===== ПРИВЯЗКА ВСЕХ СОБЫТИЙ ===== */
+function safeBind(id, event, cb) {
+  const el = document.getElementById(id);
+  if (el) el.addEventListener(event, cb);
+}
+
+function promptBalanceAdjustment() {
+  const income = state.transactions.filter(t => t.type === 'income').reduce((s, t) => s + t.amount, 0);
+  const expense = state.transactions.filter(t => t.type === 'expense').reduce((s, t) => s + t.amount, 0);
+  const calculated = income - expense;
+  const currentAdj = state.balanceAdjustment || 0;
+  const currentReal = calculated + currentAdj;
+
+  const input = prompt(
+    `Введите фактическую сумму баланса (₽):\n\nРасчётный баланс: ${fmt(calculated)}\nТекущая корректировка: ${fmt(currentAdj)}\nОтображаемый баланс: ${fmt(currentReal)}`,
+    String(Math.round(currentReal * 100) / 100)
+  );
+  if (input === null) return;
+  const newReal = parseFloat(input.replace(',', '.').replace(/[^0-9.\-]/g, ''));
+  if (isNaN(newReal)) {
+    showToast('Введите корректное число');
+    return;
+  }
+  state.balanceAdjustment = newReal - calculated;
+  saveData();
+  render();
+  syncItem('profiles', 'upsert', { balanceAdjustment: state.balanceAdjustment });
+  showToast('✅ Баланс скорректирован!');
+}
+
+function bindBalanceToggle() {
+  const btn = document.getElementById('balanceToggle');
+  const summaryCols = document.getElementById('homeSummaryCols');
+  const panel = document.getElementById('balancePanel');
+  if (!panel) return;
+
+  const togglePanel = () => {
+    panel.hidden = !panel.hidden;
+    if (btn) btn.classList.toggle('open', !panel.hidden);
+  };
+
+  if (btn) btn.addEventListener('click', togglePanel);
+  if (summaryCols) summaryCols.addEventListener('click', togglePanel);
+}
+
+function bindEvents() {
+  // 1. Нижняя навигация (5 вкладок по референсу)
+  document.querySelectorAll('.nav-item').forEach(btn => {
+    btn.addEventListener('click', () => switchNavTab(btn.dataset.nav));
+  });
+
+  // 2. Переключение месяцев в верхней шапке (< НОЯБРЬ 2026 Г. >)
+  safeBind('prevMonthBtn', 'click', () => shiftMonth(-1));
+  safeBind('nextMonthBtn', 'click', () => shiftMonth(1));
+  safeBind('monthTitleBtn', 'click', () => {
+    state.periodScope = state.periodScope === 'month' ? 'all' : 'month';
+    render();
+    showToast(state.periodScope === 'all' ? 'Показаны операции за все периоды' : 'Показаны операции за выбранный месяц');
+  });
+
+  // 3. Верхняя левая кнопка (на Главной — быстрые действия/облако; на Транзакциях — смена группировки День / Год-Месяц)
+  safeBind('topLeftActionBtn', 'click', () => {
+    if (state.activeNav === 'transactions') {
+      state.txGroupingMode = state.txGroupingMode === 'day' ? 'year_month' : 'day';
+      renderList(getFiltered());
+      showToast(state.txGroupingMode === 'day' ? 'Группировка по дням' : 'Группировка по годам и месяцам');
+    } else {
+      switchNavTab('guide');
+    }
+  });
+
+  // 4. Промо-баннер на Главной
+  safeBind('closePromoBannerBtn', 'click', () => {
+    state.promoVisible = false;
+    localStorage.setItem(PROMO_KEY, 'false');
+    renderHome();
+    updateThemeToggle();
+  });
+  safeBind('promoActionBtn', 'click', () => {
+    switchNavTab('guide');
+    showToast('✨ Все умные ИИ-функции уже разблокированы и доступны бесплатно!');
+  });
+  safeBind('promoToggleBtn', 'click', () => {
+    state.promoVisible = !state.promoVisible;
+    localStorage.setItem(PROMO_KEY, String(state.promoVisible));
+    renderHome();
+    updateThemeToggle();
+  });
+
+  // 5. Карточки пустого дохода и расхода на Главной + Категории
+  safeBind('homeIncomeEmpty', 'click', () => openAddDialog('income'));
+  safeBind('homeExpenseEmpty', 'click', () => openAddDialog('expense'));
+  safeBind('homeManageCategoriesBtn', 'click', () => openCategoryDialog('expense'));
+
+  // 6. Плавающие кнопки справа внизу (Сердечко = ИИ/Голос, Плюс = Новая транзакция)
+  safeBind('fabPlusBtn', 'click', () => openAddDialog());
+  safeBind('fabHeartBtn', 'click', () => {
+    const d = document.getElementById('quickAiAddDialog');
+    if (d) {
+      const textEl = document.getElementById('quickAiAddText');
+      if (textEl) textEl.value = '';
+      d.showModal();
+    }
+  });
+
+  // 7. Переключатели РАСХОДЫ / ДОХОД на вкладке Аналитика (Референс 4)
+  safeBind('analyticsExpensePill', 'click', () => {
+    state.analyticsType = 'expense';
+    document.getElementById('analyticsExpensePill')?.classList.add('active-expense');
+    document.getElementById('analyticsIncomePill')?.classList.remove('active-income');
+    renderDashboard();
+  });
+  safeBind('analyticsIncomePill', 'click', () => {
+    state.analyticsType = 'income';
+    document.getElementById('analyticsIncomePill')?.classList.add('active-income');
+    document.getElementById('analyticsExpensePill')?.classList.remove('active-expense');
+    renderDashboard();
+  });
+
+  // 8. Переключатели типа на вкладке Транзакции (Все / Расходы / Доходы)
+  document.querySelectorAll('.tx-type-switcher .tab-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      state.activeTab = btn.dataset.tab;
+      state.filters.category = 'all';
+      document.querySelectorAll('.tx-type-switcher .tab-btn').forEach(b => b.classList.toggle('active', b === btn));
+      render();
+    });
+  });
+
+  // 9. Диалог НОВАЯ ТРАНЗАКЦИЯ и цифровая клавиатура (Референс 3)
+  safeBind('addTransaction', 'click', () => openAddDialog());
+  safeBind('transactionForm', 'submit', saveTransaction);
+  safeBind('cancelTransaction', 'click', () => document.getElementById('transactionDialog')?.close());
+
+  document.querySelectorAll('.tx-mode-pill').forEach(btn => {
+    btn.addEventListener('click', () => setTxModalMode(btn.dataset.txMode));
+  });
+
+  safeBind('txDate', 'change', updateTxDateLabel);
+  safeBind('txPaidToggleBtn', 'click', () => {
+    state.txPaid = !state.txPaid;
+    updateTxPaidButtonUI();
+  });
+  safeBind('txQuickCatManageBtn', 'click', () => {
+    openCategoryDialog(state.txModalMode === 'income' ? 'income' : 'expense');
+  });
+
+  safeBind('txAmount', 'input', updateTxAmountUI);
+
+  document.querySelectorAll('.kp-btn, .kp-op-btn').forEach(btn => {
+    btn.addEventListener('click', () => handleKeypadPress(btn.dataset.key));
+  });
+
+  // Поддержка ввода суммы с физической клавиатуры при открытом диалоге транзакции
+  document.addEventListener('keydown', e => {
+    const txDialog = document.getElementById('transactionDialog');
+    if (!txDialog || !txDialog.open) return;
+    const activeTag = document.activeElement?.tagName;
+    if (activeTag === 'TEXTAREA' || activeTag === 'SELECT' || (activeTag === 'INPUT' && document.activeElement.id !== 'txAmount')) {
+      return;
+    }
+    if (/^[0-9]$/.test(e.key)) {
+      e.preventDefault();
+      handleKeypadPress(e.key);
+    } else if (['+', '-', '*', '/'].includes(e.key)) {
+      e.preventDefault();
+      handleKeypadPress(e.key);
+    } else if (e.key === '.' || e.key === ',') {
+      e.preventDefault();
+      handleKeypadPress('.');
+    } else if (e.key === 'Backspace') {
+      e.preventDefault();
+      handleKeypadPress('BACKSPACE');
+    }
+  });
+
+  // 10. Действия со списком транзакций
+  const txList = document.getElementById('transactionList');
+  if (txList) {
+    txList.addEventListener('click', e => {
+      const paidBtn = e.target.closest('[data-toggle-paid]');
+      if (paidBtn) {
+        e.stopPropagation();
+        toggleTransactionPaid(paidBtn.dataset.togglePaid);
+        return;
+      }
+      const templateBtn = e.target.closest('.tx-btn.template-add');
+      const editBtn = e.target.closest('.tx-btn.edit');
+      const delBtn = e.target.closest('.tx-btn.del');
+      if (templateBtn) { saveAsTemplate(templateBtn.dataset.id); return; }
+      if (editBtn) { openEditDialog(editBtn.dataset.id); return; }
+      if (delBtn) { deleteTransaction(delBtn.dataset.id); return; }
+      const item = e.target.closest('.tx-item');
+      if (item && !e.target.closest('.tx-actions')) {
+        openEditDialog(item.dataset.id);
+      }
+    });
+  }
+
+  // 11. Категории
+  safeBind('manageCategories', 'click', () => openCategoryDialog());
+  safeBind('categoryForm', 'submit', addCategory);
+  safeBind('closeCategoryDialog', 'click', () => document.getElementById('categoryDialog')?.close());
+
+  document.querySelectorAll('.cat-type-tab').forEach(btn => {
+    btn.addEventListener('click', () => {
+      state.catDialogTab = btn.dataset.catTab;
+      renderCategoryList();
+    });
+  });
+
+  const catList = document.getElementById('categoryList');
+  if (catList) {
+    catList.addEventListener('click', e => {
+      const delBtn = e.target.closest('.cat-item-del');
+      const editBtn = e.target.closest('.cat-item-edit');
+      if (delBtn) { deleteCategory(delBtn.dataset.id); return; }
+      if (editBtn) {
+        document.getElementById('categoryDialog')?.close();
+        openEditCategoryDialog(editBtn.dataset.id);
+      }
+    });
+  }
+
+  safeBind('editCategoryForm', 'submit', saveEditCategory);
+  safeBind('cancelEditCategory', 'click', () => {
+    document.getElementById('editCategoryDialog')?.close();
+    document.getElementById('categoryDialog')?.showModal();
+  });
+
+  // 12. Вкладка СЧЕТА (Референс 6)
+  safeBind('createNewAccountBtn', 'click', () => {
+    document.getElementById('newAccountName').value = '';
+    document.getElementById('newAccountInitial').value = '0';
+    document.getElementById('accountDialog')?.showModal();
+  });
+  safeBind('cancelAccountDialog', 'click', () => document.getElementById('accountDialog')?.close());
+  safeBind('accountForm', 'submit', e => {
+    e.preventDefault();
+    const name = document.getElementById('newAccountName').value.trim();
+    const initialBalance = parseFloat(document.getElementById('newAccountInitial').value) || 0;
+    if (!name) return;
+    state.accounts.push({ id: uid(), name, initialBalance });
+    saveData();
+    render();
+    document.getElementById('accountDialog')?.close();
+    showToast(`Счет «${name}» создан`);
+  });
+  safeBind('transferBalanceBtn', 'click', () => {
+    if ((state.accounts || []).length < 2) {
+      promptBalanceAdjustment();
+    } else {
+      openAddDialog('transfer');
+    }
+  });
+  safeBind('accountsAdjustBalanceBtn', 'click', promptBalanceAdjustment);
+  safeBind('adjustBalanceBtn', 'click', promptBalanceAdjustment);
+
+  // 13. Вкладка РУКОВОДСТВО
+  safeBind('guideQuickAiBtn', 'click', () => document.getElementById('quickAiAddBtn')?.click());
+  safeBind('guideSmartImportBtn', 'click', () => document.getElementById('aiImportBtn')?.click());
+  safeBind('guideCategoriesBtn', 'click', () => openCategoryDialog());
+  safeBind('guideDemoDataBtn', 'click', loadDemoData);
+  safeBind('guideSettingsBtn', 'click', openSettingsDialog);
+  safeBind('guideExportCsvBtn', 'click', exportCSV);
+
+  // 14. Фильтры и поиск
+  const toggleToolbar = () => {
+    const section = document.getElementById('toolbarSection');
+    const btn = document.getElementById('toggleFilters');
+    state.filtersOpen = !state.filtersOpen;
+    if (section) section.classList.toggle('open', state.filtersOpen);
+    if (btn) btn.classList.toggle('active', state.filtersOpen);
+  };
+  safeBind('toggleFilters', 'click', toggleToolbar);
+  safeBind('topSearchBtn', 'click', () => {
+    if (!state.filtersOpen) toggleToolbar();
+    document.getElementById('searchInput')?.focus();
+  });
+
+  safeBind('toggleDashFilters', 'click', () => {
+    const section = document.getElementById('dashToolbar');
+    const btn = document.getElementById('toggleDashFilters');
+    state.dashFiltersOpen = !state.dashFiltersOpen;
+    if (section) section.classList.toggle('open', state.dashFiltersOpen);
+    if (btn) btn.classList.toggle('active', state.dashFiltersOpen);
+  });
+
+  safeBind('searchInput', 'input', e => { state.filters.search = e.target.value; render(); });
+  safeBind('categoryFilter', 'change', e => { state.filters.category = e.target.value; render(); });
+  safeBind('sortSelect', 'change', e => { state.filters.sort = e.target.value; render(); });
+  safeBind('dateFrom', 'change', e => { state.filters.dateFrom = e.target.value; render(); });
+  safeBind('dateTo', 'change', e => { state.filters.dateTo = e.target.value; render(); });
+  safeBind('amountMin', 'input', e => { state.filters.amountMin = e.target.value; render(); });
+  safeBind('amountMax', 'input', e => { state.filters.amountMax = e.target.value; render(); });
+
+  safeBind('resetFiltersBtn', 'click', () => {
+    state.filters = { search: '', category: 'all', sort: 'date_desc', dateFrom: '', dateTo: '', amountMin: '', amountMax: '' };
+    ['searchInput', 'dateFrom', 'dateTo', 'amountMin', 'amountMax'].forEach(id => {
+      const el = document.getElementById(id); if (el) el.value = '';
+    });
+    const cat = document.getElementById('categoryFilter'); if (cat) cat.value = 'all';
+    const sort = document.getElementById('sortSelect'); if (sort) sort.value = 'date_desc';
+    render();
+    showToast('Фильтры сброшены');
+  });
+
+  safeBind('dashSearchInput', 'input', e => { state.dashFilters.search = e.target.value; renderDashboard(); });
+  safeBind('dashCategoryFilter', 'change', e => { state.dashFilters.category = e.target.value; renderDashboard(); });
+  safeBind('dashDateFrom', 'change', e => { state.dashFilters.dateFrom = e.target.value; renderDashboard(); });
+  safeBind('dashDateTo', 'change', e => { state.dashFilters.dateTo = e.target.value; renderDashboard(); });
+  safeBind('dashAmountMin', 'input', e => { state.dashFilters.amountMin = e.target.value; renderDashboard(); });
+  safeBind('dashAmountMax', 'input', e => { state.dashFilters.amountMax = e.target.value; renderDashboard(); });
+
+  safeBind('resetDashFiltersBtn', 'click', () => {
+    state.dashFilters = { search: '', category: 'all', amountMin: '', amountMax: '', dateFrom: '', dateTo: '' };
+    ['dashSearchInput', 'dashDateFrom', 'dashDateTo', 'dashAmountMin', 'dashAmountMax'].forEach(id => {
+      const el = document.getElementById(id); if (el) el.value = '';
+    });
+    const cat = document.getElementById('dashCategoryFilter'); if (cat) cat.value = 'all';
+    renderDashboard();
+    showToast('Фильтры аналитики сброшены');
+  });
+
+  document.querySelectorAll('.dash-tab').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.dash-tab').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      dashPeriod = btn.dataset.period;
+      state.dashFilters.dateFrom = '';
+      state.dashFilters.dateTo = '';
+      renderDashboard();
+    });
+  });
+
+  // 15. Настройки, Облако и ИИ
+  safeBind('themeToggle', 'click', toggleTheme);
+  safeBind('settingsBtn', 'click', openSettingsDialog);
+  safeBind('closeSettingsDialog', 'click', () => {
+    const keyEl = document.getElementById('aiApiKey');
+    if (keyEl) localStorage.setItem(AI_KEY, keyEl.value.trim());
+    const providerEl = document.getElementById('aiProvider');
+    if (providerEl) {
+      state.aiProvider = providerEl.value;
+      localStorage.setItem(AI_PROVIDER_KEY, state.aiProvider);
+    }
+    const urlEl = document.getElementById('aiApiUrl');
+    if (urlEl) {
+      state.aiApiUrl = urlEl.value.trim();
+      localStorage.setItem(AI_URL_KEY, state.aiApiUrl);
+    }
+    const modelEl = document.getElementById('aiModel');
+    if (modelEl) {
+      state.aiModel = modelEl.value.trim();
+      localStorage.setItem(AI_MODEL_KEY, state.aiModel);
+    }
+    document.getElementById('settingsDialog')?.close();
+  });
+
+  safeBind('supabaseLoginBtn', 'click', () => handleAuthAction('login'));
+  safeBind('supabaseRegisterBtn', 'click', () => handleAuthAction('register'));
+  safeBind('supabaseLogoutBtn', 'click', handleSupabaseLogout);
+  safeBind('fullDisconnectBtn', 'click', handleFullDisconnect);
+
+  safeBind('toggleCloudInstructionBtn', 'click', () => {
+    const block = document.getElementById('cloudInstructionBlock');
+    if (block) block.style.display = block.style.display === 'none' ? 'flex' : 'none';
+  });
+
+  safeBind('cloudStatusBadge', 'click', () => {
+    if (state.user) openSettingsDialog();
+    else document.getElementById('cloudExplainDialog')?.showModal();
+  });
+  safeBind('closeCloudExplainBtn', 'click', () => document.getElementById('cloudExplainDialog')?.close());
+  safeBind('cloudExplainAuthBtn', 'click', () => {
+    document.getElementById('cloudExplainDialog')?.close();
+    openSettingsDialog();
+  });
+
+  safeBind('exportCsvBtn', 'click', exportCSV);
+  safeBind('loadRefDataBtn', 'click', loadRefData);
+  safeBind('loadDemoDataBtn', 'click', loadDemoData);
+  safeBind('importCsvBtn', 'click', () => document.getElementById('importCsvInput')?.click());
+  safeBind('importCsvInput', 'change', e => {
+    const file = e.target.files[0];
+    if (file) { importCSV(file); e.target.value = ''; }
+  });
+  safeBind('clearDataBtn', 'click', clearAllData);
+
+  safeBind('clearCloudDataBtn', 'click', () => {
+    if (!confirm('Удалить ВСЕ данные из облачного хранилища?')) return;
+    document.getElementById('settingsDialog')?.close();
+    let secondsLeft = 5;
+    window._cloudDeleteCancelled = false;
+    const runDeletion = async () => {
+      if (window._cloudDeleteCancelled) return;
+      if (supabaseClient && state.user) {
+        try {
+          await Promise.all([
+            supabaseClient.from('transactions').delete().eq('user_id', state.user.id),
+            supabaseClient.from('categories').delete().eq('user_id', state.user.id),
+            supabaseClient.from('templates').delete().eq('user_id', state.user.id),
+            supabaseClient.from('ai_sessions').delete().eq('user_id', state.user.id),
+            supabaseClient.from('profiles').delete().eq('id', state.user.id)
+          ]);
+          showToast('Все данные из облака удалены');
+        } catch {
+          showToast('Ошибка при очистке облака');
+        }
+      }
+    };
+    window._cloudDeleteTimeout = setTimeout(runDeletion, 5000);
+    const updateCountdown = () => {
+      if (window._cloudDeleteCancelled) return;
+      if (secondsLeft > 0) {
+        showToast(`Удаление из облака через ${secondsLeft} сек...`, () => {
+          window._cloudDeleteCancelled = true;
+          clearTimeout(window._cloudDeleteTimeout);
+          showToast('Удаление отменено');
+        });
+        secondsLeft--;
+        setTimeout(updateCountdown, 1000);
+      }
+    };
+    updateCountdown();
+  });
+
+  safeBind('toggleApiKeyVisibility', 'click', () => {
+    const input = document.getElementById('aiApiKey');
+    if (input) {
+      input.type = input.type === 'password' ? 'text' : 'password';
+      document.getElementById('toggleApiKeyVisibility').textContent = input.type === 'password' ? '👁' : '🙈';
+    }
+  });
+
+  safeBind('aiProvider', 'change', e => {
+    const provider = e.target.value;
+    const urlLabel = document.getElementById('aiApiUrlLabel');
+    if (urlLabel) urlLabel.style.display = provider === 'custom' ? 'flex' : 'none';
+    const modelInput = document.getElementById('aiModel');
+    if (modelInput) {
+      modelInput.value = provider === 'google' ? 'gemini-3.1-flash-lite' : provider === 'openai' ? 'gpt-4o-mini' : 'deepseek-chat';
+    }
+  });
+
+  safeBind('aiInstructionBtn', 'click', () => {
+    const block = document.getElementById('aiInstructionBlock');
+    if (block) block.style.display = block.style.display === 'none' ? 'flex' : 'none';
+  });
+
+  safeBind('generateAiReportBtn', 'click', startAiReport);
+  safeBind('aiInfoBtn', 'click', () => {
+    const text = document.getElementById('aiIntroText');
+    if (text) text.style.display = text.style.display === 'none' ? 'block' : 'none';
+  });
+  safeBind('sendAiMessageBtn', 'click', sendAiMessage);
+  const aiChatInput = document.getElementById('aiChatInput');
+  if (aiChatInput) {
+    aiChatInput.addEventListener('keydown', e => { if (e.key === 'Enter') sendAiMessage(); });
+  }
+  safeBind('toggleAiFullscreenBtn', 'click', () => {
+    const box = document.getElementById('aiChatBox');
+    if (box) box.classList.toggle('fullscreen');
+  });
+  safeBind('resetAiChatBtn', 'click', () => {
+    state.currentAiSessionId = uid();
+    state.aiChatHistory = [{
+      role: 'user',
+      parts: [{ text: 'System Context: You are a helpful personal finance assistant.' }]
+    }];
+    document.getElementById('aiChatBox').style.display = 'flex';
+    document.getElementById('aiPromptCard').style.display = 'none';
+    renderAiMessages();
+    document.getElementById('aiChatInput')?.focus();
+  });
+  safeBind('closeAiChatBtn', 'click', () => {
+    const box = document.getElementById('aiChatBox');
+    if (box) { box.style.display = 'none'; box.classList.remove('fullscreen'); }
+    const card = document.getElementById('aiPromptCard');
+    if (card) card.style.display = 'flex';
+  });
+  safeBind('aiHistoryBtn', 'click', openAiHistoryDialog);
+  safeBind('closeAiHistoryDialog', 'click', () => document.getElementById('aiHistoryDialog')?.close());
+
+  safeBind('aiImportBtn', 'click', () => {
+    document.getElementById('settingsDialog')?.close();
+    const d = document.getElementById('aiImportDialog');
+    if (d) {
+      _aiImportFile = null;
+      const fileInput = document.getElementById('aiImportFileInput');
+      if (fileInput) fileInput.value = '';
+      document.getElementById('aiImportFileName').textContent = 'Нажмите или перетащите файл сюда';
+      document.getElementById('submitAiImportBtn').disabled = true;
+      document.getElementById('aiImportProgress').style.display = 'none';
+      d.showModal();
+    }
+  });
+
+  safeBind('quickAiAddBtn', 'click', () => {
+    const d = document.getElementById('quickAiAddDialog');
+    if (d) {
+      document.getElementById('quickAiAddText').value = '';
+      d.showModal();
+    }
+  });
+
+  safeBind('aiImportFileInput', 'change', e => {
+    const file = e.target.files[0];
+    _aiImportFile = file || null;
+    document.getElementById('aiImportFileName').textContent = file ? `📄 ${file.name}` : 'Нажмите или перетащите файл сюда';
+    document.getElementById('submitAiImportBtn').disabled = !file;
+  });
+
+  safeBind('submitAiImportBtn', 'click', () => {
+    if (_aiImportFile) aiSmartImportFromFile(_aiImportFile);
+  });
+  safeBind('cancelAiImport', 'click', () => document.getElementById('aiImportDialog')?.close());
+  safeBind('cancelQuickAiAdd', 'click', () => document.getElementById('quickAiAddDialog')?.close());
+
+  const quickAiAddForm = document.getElementById('quickAiAddForm');
+  if (quickAiAddForm) {
+    quickAiAddForm.addEventListener('submit', e => {
+      e.preventDefault();
+      const txt = document.getElementById('quickAiAddText').value.trim();
+      if (txt) quickAiSmartImport(txt);
+    });
+  }
+
+  document.querySelectorAll('dialog').forEach(d => {
+    d.addEventListener('click', e => { if (e.target === d) d.close(); });
+  });
+}
+
+function registerSW() {
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('./sw.js').catch(() => {});
+  }
+}
+
+function init() {
+  initTheme();
+  loadData();
+  initSupabase();
+  bindBalanceToggle();
+  bindEvents();
+  switchNavTab('home');
+  registerSW();
+  initVoiceInput();
+
+  const params = new URLSearchParams(location.search);
+  if (params.get('tab')) {
+    const tab = params.get('tab');
+    state.activeTab = tab === 'income' ? 'income' : 'expense';
+    switchNavTab('transactions');
+  }
+  if (params.get('action') === 'add') {
+    setTimeout(() => openAddDialog(params.get('tab') === 'income' ? 'income' : 'expense'), 250);
+  }
+}
+
+document.addEventListener('DOMContentLoaded', init);
