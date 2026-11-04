@@ -13,21 +13,21 @@ const PROMO_KEY = 'koshelek_promo_visible';
 
 const DEFAULT_CATEGORIES = {
   expense: [
-    { id: 'e_prod', name: '🛒 Продукты', color: '#F5BD7A', iconType: 'cart' },
-    { id: 'e_net', name: '📶 Интернет', color: '#F48278', iconType: 'wifi' },
-    { id: 'e_taxi', name: '🚕 Такси', color: '#F5BD7A', iconType: 'taxi' },
+    { id: 'e_prod', name: '🛒 Продукты', color: '#F6A65A', iconType: 'cart' },
+    { id: 'e_net', name: '📶 Интернет', color: '#5BA8F0', iconType: 'wifi' },
+    { id: 'e_taxi', name: '🚕 Такси', color: '#F2C94C', iconType: 'taxi' },
     { id: 'e1', name: '🍔 Еда', color: '#F48278', iconType: 'food' },
-    { id: 'e2', name: '🚌 Транспорт', color: '#F5BD7A', iconType: 'taxi' },
+    { id: 'e2', name: '🚌 Транспорт', color: '#4FD1C5', iconType: 'taxi' },
     { id: 'e3', name: '🏠 Жильё', color: '#B794F4', iconType: 'home' },
-    { id: 'e4', name: '💊 Здоровье', color: '#F687B3', iconType: 'health' },
-    { id: 'e5', name: '🎮 Развлечения', color: '#76A9FA', iconType: 'fun' },
-    { id: 'e6', name: '👗 Одежда', color: '#F472B6', iconType: 'clothes' },
+    { id: 'e4', name: '💊 Здоровье', color: '#FF8FA3', iconType: 'health' },
+    { id: 'e5', name: '🎮 Развлечения', color: '#8B8CF5', iconType: 'fun' },
+    { id: 'e6', name: '👗 Одежда', color: '#E879C6', iconType: 'clothes' },
     { id: 'e7', name: '📦 Прочее', color: '#94A3B8', iconType: 'misc' }
   ],
   income: [
     { id: 'i1', name: '💼 Зарплата', color: '#67C992', iconType: 'salary' },
     { id: 'i2', name: '💻 Фриланс', color: '#4FD1C5', iconType: 'freelance' },
-    { id: 'i3', name: '🎁 Подарок', color: '#F5BD7A', iconType: 'gift' },
+    { id: 'i3', name: '🎁 Подарок', color: '#F6A65A', iconType: 'gift' },
     { id: 'i4', name: '📈 Инвестиции', color: '#818CF8', iconType: 'invest' },
     { id: 'i5', name: '💵 Прочее', color: '#94A3B8', iconType: 'income' }
   ]
@@ -259,14 +259,28 @@ function getCategorySvgIcon(catName, iconType) {
   return `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="5"></circle></svg>`;
 }
 
+function catEmoji(name) {
+  const m = (name || '').match(/^\p{Extended_Pictographic}(?:\uFE0F|\u200D\p{Extended_Pictographic}\uFE0F?)*/u);
+  return m ? m[0] : null;
+}
+const CAT_FALLBACK_COLORS = ['#F6A65A','#5BA8F0','#F2C94C','#F48278','#4FD1C5','#B794F4','#FF8FA3','#8B8CF5','#E879C6','#6FCF97'];
+function catColorOf(cat) {
+  if (cat && cat.color) return cat.color;
+  const s = String((cat && (cat.id || cat.name)) || '');
+  let h = 0; for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+  return CAT_FALLBACK_COLORS[h % CAT_FALLBACK_COLORS.length];
+}
 function renderCatBadgeHTML(cat, extraClass = '') {
-  const color = (cat && cat.color) ? cat.color : '#F5BD7A';
-  const inner = getCategorySvgIcon(cat ? cat.name : '', cat ? cat.iconType : '');
+  const color = catColorOf(cat);
+  const em = cat ? catEmoji(cat.name) : null;
+  const inner = em ? `<span class="cat-emoji">${em}</span>` : getCategorySvgIcon(cat ? cat.name : '', cat ? cat.iconType : '');
   return `<div class="pastel-cat-badge ${extraClass}" style="background:${color}; --cat-color:${color}">${inner}</div>`;
 }
 
 function cleanCatTitle(name) {
-  return (name || '').replace(/^\p{Emoji}\s*/u, '').trim() || name || 'Без категории';
+  const em = catEmoji(name);
+  const t = em ? name.slice(em.length) : (name || '');
+  return t.trim() || name || 'Без категории';
 }
 
 /* ===== БЫСТРЫЕ ШАБЛОНЫ ===== */
@@ -868,6 +882,20 @@ function loadData() {
     state.balanceAdjustment = 0;
     state.transactions = buildRefDataTxs();
   }
+}
+
+const OLD_DEFAULT_COLORS = { e_prod:'#F5BD7A', e_net:'#F48278', e_taxi:'#F5BD7A', e2:'#F5BD7A', e4:'#F687B3', e5:'#76A9FA', e6:'#F472B6', i3:'#F5BD7A' };
+function migrateCatColors() {
+  let changed = false;
+  ['expense', 'income'].forEach(type => {
+    (state.categories[type] || []).forEach(c => {
+      const def = DEFAULT_CATEGORIES[type].find(d => d.id === c.id);
+      if (def && OLD_DEFAULT_COLORS[c.id] && c.color === OLD_DEFAULT_COLORS[c.id] && def.color !== c.color) {
+        c.color = def.color; changed = true;
+      }
+    });
+  });
+  if (changed) saveData();
 }
 
 function saveData() {
@@ -1589,6 +1617,7 @@ function renderAccountSelects() {
 
 /* ===== ГЛАВНЫЙ РЕНДЕР И ПЕРЕКЛЮЧЕНИЕ ВКЛАДОК ===== */
 function render() {
+  if (!state._colorsMigrated) { state._colorsMigrated = true; migrateCatColors(); }
   updateMonthHeaderUI();
   renderBalance();
   renderMainTab();
@@ -2132,46 +2161,116 @@ function updateThemeToggle() {
   btn.classList.toggle('on', isDark);
 }
 
-/* ===== CSV ЭКСПОРТ И ИМПОРТ ===== */
-function exportCSV() {
-  const allCats = [...state.categories.expense, ...state.categories.income];
-  const getCatName = (type, id) => {
-    const c = allCats.find(c => c.id === id);
-    return c ? c.name : id;
-  };
-
-  const header = ['ID операции', 'Тип', 'Сумма', 'ID категории', 'Категория', 'Дата', 'Комментарий'];
-  const rows = state.transactions.map(tx => [
-    tx.id,
-    tx.type === 'income' ? 'Доход' : 'Расход',
-    tx.amount,
-    tx.categoryId,
-    `"${(getCatName(tx.type, tx.categoryId) || '').replace(/"/g, '""')}"`,
-    tx.date,
-    `"${(tx.comment || '').replace(/"/g, '""')}"`
-  ]);
-
-  const catHeader = ['ID категории', 'Тип категории', 'Название категории', 'Цвет'];
-  const catRows = [
-    ...state.categories.expense.map(c => [c.id, 'Расход', `"${c.name.replace(/"/g, '""')}"`, c.color]),
-    ...state.categories.income.map(c => [c.id, 'Доход', `"${c.name.replace(/"/g, '""')}"`, c.color])
-  ];
-
-  const csv = [
-    [header].concat(rows).map(r => r.join(',')).join('\n'),
-    '',
-    '# CATEGORIES',
-    [catHeader].concat(catRows).map(r => r.join(',')).join('\n')
-  ].join('\n');
-
-  const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+/* ===== ЭКСПОРТ И ИМПОРТ (CSV и полный бэкап JSON) ===== */
+function csvCell(v) {
+  if (v === undefined || v === null) v = '';
+  return '"' + String(v).replace(/\r?\n/g, ' ').replace(/"/g, '""') + '"';
+}
+function downloadBlob(text, mime, filename) {
+  const blob = new Blob([text], { type: mime });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `koshelek_${new Date().toISOString().slice(0, 10)}.csv`;
+  a.download = filename;
+  document.body.appendChild(a);
   a.click();
-  URL.revokeObjectURL(url);
-  showToast('CSV экспортирован');
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
+}
+function getTemplatesList() {
+  if (state.templates) return state.templates;
+  try { return JSON.parse(localStorage.getItem('koshelek_templates')) || []; } catch { return []; }
+}
+
+function exportCSV() {
+  const allCats = [...state.categories.expense, ...state.categories.income];
+  const catName = id => (allCats.find(c => c.id === id) || {}).name || id;
+  const accName = id => getAccountName(id);
+  const line = arr => arr.map(csvCell).join(',');
+  const out = [];
+  out.push('# TRANSACTIONS');
+  out.push(line(['ID операции','Тип','Сумма','ID категории','Категория','Дата','Комментарий','ID счёта','Счёт','Оплачено','Повтор']));
+  state.transactions.forEach(tx => out.push(line([
+    tx.id, tx.type === 'income' ? 'Доход' : 'Расход', tx.amount, tx.categoryId, catName(tx.categoryId), tx.date,
+    tx.comment || '', tx.accountId || 'default', accName(tx.accountId || 'default'),
+    tx.paid === false ? 'Нет' : 'Да', tx.recurrence || 'none'
+  ])));
+  out.push('');
+  out.push('# CATEGORIES');
+  out.push(line(['ID категории','Тип категории','Название категории','Цвет','Иконка']));
+  [['expense','Расход'],['income','Доход']].forEach(([t, l]) =>
+    state.categories[t].forEach(c => out.push(line([c.id, l, c.name, c.color || '', c.iconType || '']))));
+  out.push('');
+  out.push('# ACCOUNTS');
+  out.push(line(['ID счёта','Название счёта','Начальный баланс']));
+  (state.accounts || []).forEach(a => out.push(line([a.id, a.name, a.initialBalance || 0])));
+  out.push('');
+  out.push('# TEMPLATES');
+  out.push(line(['ID шаблона','Название','Тип','ID категории','Комментарий','Сумма']));
+  getTemplatesList().forEach(t => out.push(line([t.id, t.name, t.type || 'expense', t.categoryId || '', t.comment || '', t.amount || ''])));
+  out.push('');
+  out.push('# SETTINGS');
+  out.push(line(['Параметр','Значение']));
+  out.push(line(['balanceAdjustment', state.balanceAdjustment || 0]));
+  downloadBlob('\uFEFF' + out.join('\n'), 'text/csv;charset=utf-8;', `koshelek_${new Date().toISOString().slice(0, 10)}.csv`);
+  showToast('CSV экспортирован (операции, категории, счета, шаблоны)');
+}
+
+function exportBackupJSON() {
+  const data = {
+    app: 'koshelek',
+    format: 2,
+    exportedAt: new Date().toISOString(),
+    transactions: state.transactions,
+    categories: state.categories,
+    accounts: state.accounts,
+    templates: getTemplatesList(),
+    balanceAdjustment: state.balanceAdjustment || 0,
+    settings: {
+      theme: localStorage.getItem(THEME_KEY) || 'light',
+      aiProvider: state.aiProvider || '',
+      aiModel: state.aiModel || '',
+      aiApiUrl: state.aiApiUrl || ''
+    }
+  };
+  downloadBlob(JSON.stringify(data, null, 2), 'application/json;charset=utf-8;', `koshelek_backup_${new Date().toISOString().slice(0, 10)}.json`);
+  showToast('Полный бэкап сохранён (ключ ИИ не включён)');
+}
+
+function importBackupJSON(file) {
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const d = JSON.parse(String(e.target.result).replace(/^\uFEFF/, ''));
+      if (!d || !Array.isArray(d.transactions)) { showToast('Это не бэкап Кошелька'); return; }
+      const replaceAll = confirm('Заменить текущие данные данными из бэкапа?\n\nОК — заменить всё\nОтмена — только добавить недостающее');
+      const cats = d.categories || { expense: [], income: [] };
+      if (replaceAll) {
+        state.transactions = d.transactions;
+        state.categories = { expense: cats.expense || [], income: cats.income || [] };
+        if (Array.isArray(d.accounts) && d.accounts.length) state.accounts = d.accounts;
+        state.balanceAdjustment = parseFloat(d.balanceAdjustment) || 0;
+        state.templates = Array.isArray(d.templates) ? d.templates : [];
+      } else {
+        const ids = new Set(state.transactions.map(t => t.id));
+        d.transactions.forEach(t => { if (!ids.has(t.id)) state.transactions.push(t); });
+        ['expense', 'income'].forEach(type => {
+          const have = new Set(state.categories[type].map(c => c.id));
+          (cats[type] || []).forEach(c => { if (!have.has(c.id)) state.categories[type].push(c); });
+        });
+        const accIds = new Set((state.accounts || []).map(a => a.id));
+        (d.accounts || []).forEach(a => { if (!accIds.has(a.id)) state.accounts.push(a); });
+        const tpl = getTemplatesList(); const tIds = new Set(tpl.map(t => t.id));
+        state.templates = [...tpl, ...(d.templates || []).filter(t => !tIds.has(t.id))];
+      }
+      localStorage.setItem('koshelek_templates', JSON.stringify(state.templates));
+      saveData();
+      renderTemplates();
+      render();
+      showToast(`Бэкап загружен: ${d.transactions.length} операций`);
+    } catch { showToast('Ошибка чтения бэкапа'); }
+  };
+  reader.readAsText(file, 'utf-8');
 }
 
 const CSV_HEADER_MAP = {
@@ -2181,14 +2280,18 @@ const CSV_HEADER_MAP = {
   'categoryId': 'categoryId', 'ID категории': 'categoryId',
   'categoryName': 'categoryName', 'Категория': 'categoryName',
   'date': 'date', 'Дата': 'date',
-  'comment': 'comment', 'Комментарий': 'comment'
+  'comment': 'comment', 'Комментарий': 'comment',
+  'ID счёта': 'accountId', 'accountId': 'accountId',
+  'Оплачено': 'paid', 'paid': 'paid',
+  'Повтор': 'recurrence', 'recurrence': 'recurrence'
 };
 
 const CSV_CAT_HEADER_MAP = {
   'cat_id': 'cat_id', 'ID категории': 'cat_id',
   'cat_type': 'cat_type', 'Тип категории': 'cat_type',
   'cat_name': 'cat_name', 'Название категории': 'cat_name',
-  'cat_color': 'cat_color', 'Цвет': 'cat_color'
+  'cat_color': 'cat_color', 'Цвет': 'cat_color',
+  'cat_icon': 'cat_icon', 'Иконка': 'cat_icon'
 };
 
 function parseCSVLine(line) {
@@ -2221,10 +2324,16 @@ function importCSV(file) {
       const newCategories = { expense: [], income: [] };
       let txHeaders = null;
       let catHeaders = null;
+      let auxHeaders = false;
+      const newAccounts = [], newTemplates = [];
+      let newAdjustment = null;
 
       for (const line of lines) {
         if (line.startsWith('# TRANSACTIONS')) { mode = 'tx'; txHeaders = null; continue; }
         if (line.startsWith('# CATEGORIES')) { mode = 'cat'; catHeaders = null; continue; }
+        if (line.startsWith('# ACCOUNTS')) { mode = 'acc'; auxHeaders = false; continue; }
+        if (line.startsWith('# TEMPLATES')) { mode = 'tpl'; auxHeaders = false; continue; }
+        if (line.startsWith('# SETTINGS')) { mode = 'set'; auxHeaders = false; continue; }
         if (line.startsWith('#')) continue;
 
         const cols = parseCSVLine(line);
@@ -2242,8 +2351,9 @@ function importCSV(file) {
               categoryId: row.categoryId || 'e_prod',
               date: row.date,
               comment: row.comment || '',
-              accountId: 'default',
-              paid: true
+              accountId: row.accountId || 'default',
+              paid: !(row.paid === 'Нет' || row.paid === 'false'),
+              recurrence: row.recurrence || 'none'
             });
           }
         } else if (mode === 'cat') {
@@ -2254,8 +2364,19 @@ function importCSV(file) {
           const row = Object.fromEntries(catHeaders.map((h, i) => [h, cols[i] ?? '']));
           if (row.cat_id && row.cat_type && row.cat_name) {
             const type = (row.cat_type === 'income' || row.cat_type === 'Доход') ? 'income' : 'expense';
-            newCategories[type].push({ id: row.cat_id, name: row.cat_name, color: row.cat_color || '#F5BD7A' });
+            const nc = { id: row.cat_id, name: row.cat_name, color: row.cat_color || '#F5BD7A' };
+            if (row.cat_icon) nc.iconType = row.cat_icon;
+            newCategories[type].push(nc);
           }
+        } else if (mode === 'acc' || mode === 'tpl' || mode === 'set') {
+          if (!auxHeaders) { auxHeaders = true; continue; }
+          if (mode === 'acc' && cols[0]) newAccounts.push({ id: cols[0], name: cols[1] || cols[0], initialBalance: parseFloat(cols[2]) || 0 });
+          if (mode === 'tpl' && cols[0]) {
+            const t = { id: cols[0], name: cols[1] || '', type: cols[2] === 'income' ? 'income' : 'expense', categoryId: cols[3] || '', comment: cols[4] || '' };
+            if (parseFloat(cols[5]) > 0) t.amount = parseFloat(cols[5]);
+            newTemplates.push(t);
+          }
+          if (mode === 'set' && cols[0] === 'balanceAdjustment') newAdjustment = parseFloat(cols[1]) || 0;
         }
       }
 
@@ -2264,6 +2385,7 @@ function importCSV(file) {
         return;
       }
 
+      const hadTx = state.transactions.length > 0;
       const existingTxIds = new Set(state.transactions.map(t => t.id));
       let addedTx = 0;
       newTransactions.forEach(tx => {
@@ -2277,7 +2399,14 @@ function importCSV(file) {
         });
       });
 
+      const haveAcc = new Set((state.accounts || []).map(a => a.id));
+      newAccounts.forEach(a => { if (!haveAcc.has(a.id)) state.accounts.push(a); });
+      const tpl = getTemplatesList(); const haveTpl = new Set(tpl.map(t => t.id));
+      state.templates = [...tpl, ...newTemplates.filter(t => !haveTpl.has(t.id))];
+      localStorage.setItem('koshelek_templates', JSON.stringify(state.templates));
+      if (newAdjustment !== null && !hadTx) state.balanceAdjustment = newAdjustment;
       saveData();
+      renderTemplates();
       render();
       showToast(`Импортировано: ${addedTx} записей`);
     } catch {
@@ -3611,17 +3740,66 @@ function preventMobileZoom() {
   ['gesturestart', 'gesturechange', 'gestureend'].forEach(evt => {
     document.addEventListener(evt, e => e.preventDefault(), { passive: false });
   });
-  let lastTouchEnd = 0;
-  document.addEventListener('touchend', e => {
-    const now = Date.now();
-    if (now - lastTouchEnd <= 280) {
-      e.preventDefault();
-    }
-    lastTouchEnd = now;
-  }, { passive: false });
   document.addEventListener('dblclick', e => {
     e.preventDefault();
   }, { passive: false });
+}
+
+/* ===== КАЛЕНДАРЬ: ВЫБОР МЕСЯЦА ===== */
+function openMonthPicker() {
+  let dlg = document.getElementById('monthPickerDialog');
+  if (!dlg) {
+    dlg = document.createElement('dialog');
+    dlg.id = 'monthPickerDialog';
+    dlg.className = 'modal month-picker';
+    document.body.appendChild(dlg);
+    dlg.addEventListener('click', e => { if (e.target === dlg) dlg.close(); });
+  }
+  let year = state.selectedYear;
+  const MONTHS = ['Янв','Фев','Мар','Апр','Май','Июн','Июл','Авг','Сен','Окт','Ноя','Дек'];
+  const draw = () => {
+    const used = new Set(state.transactions.map(t => t.date.slice(0, 7)));
+    const now = new Date();
+    dlg.innerHTML = `<div class="modal-content mp-content">
+      <div class="mp-year">
+        <button type="button" class="mp-arrow" data-y="-1" aria-label="Предыдущий год">‹</button>
+        <span class="mp-year-label">${year}</span>
+        <button type="button" class="mp-arrow" data-y="1" aria-label="Следующий год">›</button>
+      </div>
+      <div class="mp-grid">${MONTHS.map((n, i) => {
+        const key = `${year}-${String(i + 1).padStart(2, '0')}`;
+        const sel = state.periodScope === 'month' && year === state.selectedYear && i === state.selectedMonth;
+        const cur = year === now.getFullYear() && i === now.getMonth();
+        return `<button type="button" class="mp-month${sel ? ' selected' : ''}${cur ? ' current' : ''}${used.has(key) ? ' used' : ''}" data-m="${i}">${n}</button>`;
+      }).join('')}</div>
+      <div class="mp-actions">
+        <button type="button" class="ghost" data-act="today">Сегодня</button>
+        <button type="button" class="ghost${state.periodScope === 'all' ? ' active' : ''}" data-act="all">Все периоды</button>
+      </div>
+    </div>`;
+    dlg.querySelectorAll('[data-y]').forEach(b => b.addEventListener('click', () => { year += parseInt(b.dataset.y); draw(); }));
+    dlg.querySelectorAll('[data-m]').forEach(b => b.addEventListener('click', () => {
+      state.periodScope = 'month';
+      state.selectedYear = year;
+      state.selectedMonth = parseInt(b.dataset.m);
+      dlg.close();
+      render();
+    }));
+    dlg.querySelector('[data-act="today"]').addEventListener('click', () => {
+      state.periodScope = 'month';
+      state.selectedYear = now.getFullYear();
+      state.selectedMonth = now.getMonth();
+      dlg.close();
+      render();
+    });
+    dlg.querySelector('[data-act="all"]').addEventListener('click', () => {
+      state.periodScope = 'all';
+      dlg.close();
+      render();
+    });
+  };
+  draw();
+  dlg.showModal();
 }
 
 function bindEvents() {
@@ -3640,11 +3818,7 @@ function bindEvents() {
   // 2. Переключение месяцев в верхней шапке (< НОЯБРЬ 2026 Г. >)
   safeBind('prevMonthBtn', 'click', () => shiftMonth(-1));
   safeBind('nextMonthBtn', 'click', () => shiftMonth(1));
-  safeBind('monthTitleBtn', 'click', () => {
-    state.periodScope = state.periodScope === 'month' ? 'all' : 'month';
-    render();
-    showToast(state.periodScope === 'all' ? 'Показаны операции за все периоды' : 'Показаны операции за выбранный месяц');
-  });
+  safeBind('monthTitleBtn', 'click', openMonthPicker);
 
   // 3. Верхняя левая кнопка (на Главной — быстрые действия; на Транзакциях — смена группировки День / Год-Месяц)
   safeBind('topLeftActionBtn', 'click', () => {
@@ -3767,7 +3941,20 @@ function bindEvents() {
   safeBind('txAmount', 'input', updateTxAmountUI);
 
   document.querySelectorAll('.kp-btn, .kp-op-btn').forEach(btn => {
-    btn.addEventListener('click', () => handleKeypadPress(btn.dataset.key));
+    let lastDown = 0;
+    // Реагируем на самое касание (без ожидания click) — как в калькуляторе
+    btn.addEventListener('pointerdown', e => {
+      if (e.pointerType === 'mouse' && e.button !== 0) return;
+      lastDown = Date.now();
+      e.preventDefault();
+      handleKeypadPress(btn.dataset.key);
+    });
+    btn.addEventListener('pointercancel', () => { lastDown = 0; });
+    // click остаётся для клавиатуры/доступности (detail===0), касание уже обработано
+    btn.addEventListener('click', e => {
+      if (Date.now() - lastDown < 3000) return;
+      handleKeypadPress(btn.dataset.key);
+    });
   });
 
   // Поддержка ввода суммы с физической клавиатуры при открытом диалоге транзакции
@@ -4000,6 +4187,12 @@ function bindEvents() {
   });
 
   safeBind('exportCsvBtn', 'click', exportCSV);
+  safeBind('exportJsonBtn', 'click', exportBackupJSON);
+  safeBind('importJsonBtn', 'click', () => document.getElementById('importJsonInput')?.click());
+  safeBind('importJsonInput', 'change', e => {
+    const file = e.target.files[0];
+    if (file) { importBackupJSON(file); e.target.value = ''; }
+  });
   safeBind('loadRefDataBtn', 'click', loadRefData);
   safeBind('loadDemoDataBtn', 'click', loadDemoData);
   safeBind('importCsvBtn', 'click', () => document.getElementById('importCsvInput')?.click());

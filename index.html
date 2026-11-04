@@ -34,7 +34,7 @@
           <button id="prevMonthBtn" class="month-arrow-btn" type="button" aria-label="Предыдущий месяц">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
           </button>
-          <button id="monthTitleBtn" class="month-title-btn" type="button" title="Нажмите для переключения режима: Месяц / Все периоды">
+          <button id="monthTitleBtn" class="month-title-btn" type="button" title="Выбрать месяц в календаре">
             <span id="activeMonthLabel">НОЯБРЬ 2026 Г.</span>
             <span id="monthPinkBadge" class="month-pink-chevron">
               <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
@@ -678,6 +678,15 @@
               <span class="settings-action-icon">⬇️</span><span>Импорт CSV</span>
             </button>
             <input id="importCsvInput" type="file" accept=".csv" style="display:none">
+          </div>
+          <div class="row settings-two-btns">
+            <button id="exportJsonBtn" class="settings-action-btn" type="button">
+              <span class="settings-action-icon">💾</span><span>Полный бэкап (JSON)</span>
+            </button>
+            <button id="importJsonBtn" class="settings-action-btn" type="button">
+              <span class="settings-action-icon">♻️</span><span>Восстановить из бэкапа</span>
+            </button>
+            <input id="importJsonInput" type="file" accept=".json,application/json" style="display:none">
           </div>
           <button id="loadRefDataBtn" class="settings-action-btn" type="button">
             <span class="settings-action-icon">🌸</span>
